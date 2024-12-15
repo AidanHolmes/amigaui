@@ -9,6 +9,10 @@
 #include <proto/asl.h>
 #include <libraries/asl.h>
 
+#define GFX_IS_OCS  0x0001
+#define GFX_IS_ECS  0x0002
+#define GFX_IS_AGA	0x0003
+
 struct AppGadget;
 struct App;
 struct Wnd;
@@ -31,7 +35,7 @@ typedef struct Wnd {
 	ULONG idcmp ;
 	struct NewWindow info;
 	struct Window *appWindow;
-    struct Gadget *glist;
+    //struct Gadget *glist;
     struct Gadget *gtail;
 	struct List childWnd;
 	struct Wnd *lastModal;
@@ -56,6 +60,8 @@ typedef struct App {
 	int closedispatch;
 	BOOL isScreenRTG;
 	struct Library *cgfx;
+	struct Library *asl;
+	void *appContext ; // anything you want
 } App;
 
 typedef struct AppGadget {
@@ -69,6 +75,10 @@ typedef struct AppGadget {
 	
 } AppGadget;
 
+// Returns identification of chipset in-use on target machine. 
+// ECS and AGA are safe but OCS doesn't offically identify, but code attempts to retry checks to ensure correct.
+UWORD gfxChipSet(void);
+
 // Must call this first before any other operations
 // Returns 0 on success
 int initialiseApp(App *myApp);
@@ -81,6 +91,9 @@ int createAppScreen(App *myApp, BOOL hires, BOOL laced, ULONG *tags);
 // Adds a new app gadget to the window. This will reset all callbacks so only change these after this call
 // Returns NULL if failed
 struct Gadget* addAppGadget(Wnd *myWnd, AppGadget *gad);
+
+// Remove a gadget from the window. Note that you will need to call addAppGadget again to insert.
+void delAppGadget(AppGadget *gad);
 
 // Set a tag list for the gadget. This only sets the initial gadget list before calling addAppGadget.
 // This function will change the tags before or after calling openAppWindow.

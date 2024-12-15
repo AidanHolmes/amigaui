@@ -16,8 +16,8 @@ Test: ui.lib main.o
 ImageTest: ui.lib imagetest.o iff.o
 	sc link to ImageTest imagetest.o iff.o library=ui.lib
 
-ui.lib: app.o listgad.o stringgad.o txtgad.o iff.o numgad.o intgad.o
-	oml ui.lib app.o listgad.o stringgad.o txtgad.o iff.o numgad.o intgad.o
+ui.lib: app.o listgad.o stringgad.o txtgad.o iff.o numgad.o intgad.o gfx.o
+	oml ui.lib app.o listgad.o stringgad.o txtgad.o iff.o numgad.o intgad.o gfx.o
 
 main.o: main.c 
    sc $(SCOPTS) main.c
@@ -42,6 +42,9 @@ intgad.o: intgad.c
    
 iff.o: iff.c
    sc $(SCOPTS) iff.c
+
+gfx.o: gfx.c
+   sc $(SCOPTS) gfx.c
 
 imagetest.o: imagetest.c
    sc $(SCOPTS) imagetest.c

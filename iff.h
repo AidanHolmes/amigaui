@@ -45,6 +45,13 @@
 #define IFF_BUFF_LEN			128
 #define IFF_ID_LEN				4
 
+#define CMP_HDR(x,y) (x[0] == y[0] && x[1] == y[1] && x[2] == y[2] && x[3] == y[3])
+
+struct IFFChunkData{
+	ULONG offset;
+	ULONG length;
+};
+
 struct _BitmapHeader{
 	/* Chunk data starts here */
 	UWORD  Width;        /* Width of image in pixels */
@@ -85,10 +92,10 @@ struct IFFctx{
 struct IFFgfx{
 	struct IFFctx ctx;		// Entire IFF image
 	struct _BitmapHeader bitmaphdr;
-	ULONG cmap_offset;
-	ULONG cmap_length;
-	ULONG body_offset;
-	ULONG body_length;
+	struct IFFChunkData bmhd;
+	struct IFFChunkData cmap;
+	struct IFFChunkData body;
+	struct IFFChunkData camg;
 	ULONG camg_flags;
 };
 
@@ -118,11 +125,34 @@ struct IFFRenderInfo {
 
 UWORD initialiseIFF(struct IFFgfx *iff);
 UWORD parseIFFImage(struct IFFgfx *iff, FILE *f);
-struct BitMap* createBitMap(struct IFFgfx *gfx,struct BitMap *friend);
+
+// Create a bitmap from IFF body chunk and BMHD chunk.
+struct BitMap* createBitMap(struct IFFctx *ctx, struct IFFChunkData *body, struct _BitmapHeader *bitmaphdr, struct BitMap *friend);
 void freeBitMap(struct BitMap *bmp);
 
-struct ColorSpec* createColorMap(struct IFFgfx *gfx, UBYTE bitspergun);
+// Set a colour table - faster than setViewPortColorSpec
+UWORD setViewPortColorTable(struct ViewPort *vp, ULONG *c, UBYTE maxDepth);
+
+// Create a colour table compatible with LoadRGB32. Should be freed with FreeVec
+ULONG* createColorTable(struct IFFctx *ctx, struct IFFChunkData *cmap);
+
+// Free memory for allocated colour table
+void freeColourTable(ULONG *colourTable);
+
+// Function to set colour map using an IFF CMAP
+UWORD setViewPortColorMap(struct ViewPort *vp, struct IFFctx *ctx, struct IFFChunkData *cmap, UBYTE maxDepth);
+
+// Function to alternatively set a colour map using a colour spec
+UWORD setViewPortColorSpec(struct ViewPort *vp, struct ColorSpec *cs, UBYTE maxDepth);
+
+// Create a colour spec from an IFF colour map. 
+struct ColorSpec* createColorMap(struct IFFctx *ctx, struct IFFChunkData *cmap, UBYTE bitspergun);
+
+// Free memory for a generated colour spec
 void freeColorMap(struct ColorSpec *cs);
+
+// Colour table version to set 24bit chunky display
+UWORD convertPlanarTableTo24bitRender(struct IFFRenderInfo *ri, UWORD Width, UWORD Height, struct BitMap *bmp, ULONG *colourTable);
 
 //struct BitMap* convertPlanarTo16bit(UWORD Width, UWORD Height, struct BitMap *bmp, struct ColorSpec *cs);
 //UWORD convertPlanarTo16bitRender(struct IFFRenderInfo *ri, UWORD Width, UWORD Height, struct BitMap *bmp, struct ColorSpec *cs);
@@ -138,6 +168,11 @@ ULONG unpackIFF(UWORD bytesPerRow, UBYTE *dest, UBYTE *src, FILE *fsrc);
 // Parent will point to the containing CAT, FORM, LIST or PROP unless this is the last container. 
 // ID is unique for each CAT, FORM, LIST or PROP. This can be used to tell if the container has changed to a new one, suggesting a new entity in IFF. 
 UWORD parseIFF(struct IFFctx *iff, chunk_callback fn);
+
+// Search for a chunk name within a container. This does not search child items and only searches the specified container. 
+// Returns NULL if no match, otherwise returns the first chunk found. 
+// szName must be upper case and match standard 4 byte chunk identifiers. 
+struct IFFnode* findNodeInContainer(struct IFFnode *container, char *szName);
 
 ///////////////////////////////////
 // Building IFF

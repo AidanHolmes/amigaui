@@ -4,6 +4,8 @@
 #include <proto/intuition.h>
 #include <proto/gadtools.h>
 #include <proto/exec.h>
+#include <exec/types.h>
+#include <exec/exec.h>
 #include <proto/dos.h>
 #include <intuition/intuition.h>
 #include <libraries/gadtools.h>
@@ -47,10 +49,26 @@ void lvSelected(AppGadget *lvg, struct IntuiMessage *m)
 void btnClicked(AppGadget *lvg, struct IntuiMessage *m)
 {
 	Wnd *childWnd;
+	AppGadget *newBtn;
 	
     printf("String buffer: %s\n", getStringValue(txtCtrl)); 
 	setTextValue(intCtrl, getStringValue(txtCtrl)) ;
 	setStringValue(txtCtrl, "World") ;
+	
+	if ((newBtn=AllocVec((sizeof(struct AppGadget)), MEMF_ANY | MEMF_CLEAR))){
+		newBtn->gadgetkind = BUTTON_KIND;
+		newBtn->def.ng_LeftEdge = 10;
+		newBtn->def.ng_TopEdge = 10;
+		newBtn->def.ng_Width = 100;
+		newBtn->def.ng_Height = 50;
+		newBtn->def.ng_GadgetText = "New Btn" ;
+		newBtn->def.ng_TextAttr = &topaz8;
+		newBtn->def.ng_GadgetID = 66;
+		newBtn->def.ng_Flags = PLACETEXT_IN;
+		newBtn->def.ng_VisualInfo = lvg->wnd->app->visual;
+		
+		addAppGadget(lvg->wnd, newBtn) ;
+	}
 	
 	if ((childWnd=findAppWindowName(lvg->wnd->app, "test"))){
 		openAppWindow(childWnd, NULL) ;

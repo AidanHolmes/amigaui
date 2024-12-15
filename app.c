@@ -11,6 +11,8 @@
 #include <cybergraphx/cybergraphics.h>
 #include <proto/cybergraphics.h>
 
+#define AslBase myApp->asl
+
 //#define MIN_IDCMP (IDCMP_GADGETUP | IDCMP_NEWSIZE | IDCMP_ACTIVEWINDOW | IDCMP_INACTIVEWINDOW | IDCMP_CHANGEWINDOW | IDCMP_CLOSEWINDOW | LISTVIEWIDCMP | TEXTIDCMP)
 #define MIN_IDCMP (IDCMP_GADGETUP | IDCMP_NEWSIZE | IDCMP_ACTIVEWINDOW | IDCMP_INACTIVEWINDOW | IDCMP_CHANGEWINDOW | IDCMP_CLOSEWINDOW | IDCMP_MENUPICK)
 
@@ -81,6 +83,36 @@ void _closeTimer(struct IORequest *tmr)
     }
 }
 
+UWORD gfxChipSet(void)
+{
+    volatile unsigned short *id = (unsigned short*)0xDFF07C;
+    UBYTE i = 20;
+	UWORD ret = 0, lastret = 0;
+	
+	for (;i >0; i--){
+		switch (*id & 0x00FF){
+			case 0xF8:
+			ret = GFX_IS_AGA;
+			break;
+			case 0x00FC:
+			ret = GFX_IS_ECS;
+			break;
+			default:
+			ret = GFX_IS_OCS;
+		}
+		if(i == 20){
+			lastret = ret;
+		}else{
+			if (ret != lastret){
+				// changes, this must be OCS which doesn't have a register (noise in mem/bus)
+				return GFX_IS_OCS;
+			}
+		}
+	}
+	
+	return ret ;
+}
+
 int createAppScreen(App *myApp, BOOL hires, BOOL laced, ULONG *tags)
 {
 	if (myApp->appScreen){
@@ -137,6 +169,8 @@ int initialiseApp(App *myApp)
 	myApp->closedispatch = FALSE;
 	myApp->isScreenRTG = FALSE;
 	myApp->cgfx = NULL ;
+	myApp->asl = NULL;
+	myApp->appContext = NULL;
 	
 	memset(&myApp->screeninfo, 0, sizeof(struct NewScreen));
 	myApp->screeninfo.Width = STDSCREENWIDTH;
@@ -173,11 +207,12 @@ int initialiseApp(App *myApp)
 		printf("Failed to create shared message port.\n");
 		return (5) ;
 	}
-	
-	if (!(myApp->fileRequester = AllocAslRequest(ASL_FileRequest, NULL))){
-		appCleanUp(myApp) ;
-		printf("Failed to allocate ASL file requester\n");
-		return (5);
+	if((myApp->asl=OpenLibrary("asl.library",36L))){
+		if (!(myApp->fileRequester = AllocAslRequest(ASL_FileRequest, NULL))){
+			appCleanUp(myApp) ;
+			printf("Failed to allocate ASL file requester\n");
+			return (5);
+		}
 	}
 	
 	if(myApp->cgfx=OpenLibrary("cybergraphics.library",41L)){
@@ -291,7 +326,7 @@ int openAppWindow(Wnd *myWnd, ULONG *tags)
 	// pointer to pub screen should be unlocked after first openwindow call.
 	if (myWnd->app->appScreen && !myWnd->app->customscreen){
 		UnlockPubScreen(NULL, myWnd->app->appScreen); 
-		myWnd->app->appScreen = NULL ;
+		//myWnd->app->appScreen = NULL ;
 	}
 	
 	// If window is modal then remember previous modal (if any) and set
@@ -452,18 +487,35 @@ struct Gadget* addAppGadget(Wnd *myWnd, AppGadget *gad)
     if (!gad->gadget){
         return NULL;
     }
+	
     myWnd->gtail = gad->gadget;
     // Associate the gadget to the AppGadget
     gad->gadget->UserData = gad;
     gad->fn_gadgetUp = NULL;
     gad->wnd = myWnd ;
+	if (myWnd->appWindow){ 
+		// Already has an active window open
+		RefreshGadgets(myWnd->info.FirstGadget, myWnd->appWindow, NULL);
+		GT_RefreshWindow(myWnd->appWindow, NULL); // Update gadtools in window
+	}		
     return gad->gadget;
+}
+
+void delAppGadget(AppGadget *gad)
+{
+	if (gad->wnd && gad->wnd->appWindow){
+		RemoveGadget(gad->wnd->appWindow, gad->gadget);
+		//FreeGadgets(gad->gadget);
+		gad->gadget = NULL ;
+		RefreshGList(gad->wnd->info.FirstGadget, gad->wnd->appWindow, NULL, -1);
+		GT_RefreshWindow(gad->wnd->appWindow, NULL); // Update gadtools in window
+	}
 }
 
 void setGadgetTags(AppGadget *g, ULONG *tags)
 {
     g->gadgetTags = (struct TagItem *)tags;
-	if (g->wnd){
+	if (g->wnd && g->wnd->appWindow){
 		// Window exists. The gadget will need updating
 		GT_SetGadgetAttrsA(g->gadget, g->wnd->appWindow, NULL, (struct TagItem *)tags) ;
 	}
@@ -543,11 +595,19 @@ Wnd* findAppWindowName(App *myApp, UBYTE *strfind)
 
 struct FileRequester* openFileLoad(Wnd *parent, UBYTE *szTitle, UBYTE *szDrawer, UBYTE *szPattern)
 {
+	App *myApp = NULL;
 	struct TagItem tags[] = {{ASLFR_Window,0},{TAG_IGNORE,0},{TAG_IGNORE,0},{TAG_IGNORE,0},{TAG_DONE,0}};
 	
 	if (!parent){
 		return NULL;
 	}
+	
+	myApp = parent->app;
+	
+	if (!myApp->asl){
+		return NULL;
+	}
+
 	tags[0].ti_Data = (ULONG)parent->appWindow;
 	if (szTitle){
 		tags[1].ti_Tag = ASLFR_TitleText;
@@ -561,8 +621,8 @@ struct FileRequester* openFileLoad(Wnd *parent, UBYTE *szTitle, UBYTE *szDrawer,
 		tags[3].ti_Tag = ASLFR_InitialPattern;
 		tags[3].ti_Data = (ULONG)szPattern;
 	}
-	if (AslRequest(parent->app->fileRequester, tags)){
-		return parent->app->fileRequester;
+	if (AslRequest(myApp->fileRequester, tags)){
+		return myApp->fileRequester;
 	}
 	return NULL;
 }
