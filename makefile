@@ -2,8 +2,8 @@
 #   Amiga UI wrapper for GadTools
 # Makefile for ui.lib and test application
 
-#SCOPTS = DEFINE=_DEBUG IGNORE=193 debug=full IncludeDirectory=/CGraphX/C/Include/
-SCOPTS = OPTIMIZE Optimizerinline OptimizerComplexity=10 OptimizerGlobal OptimizerDepth=1 OptimizerLoop OptimizerTime OptimizerSchedule OptimizerPeephole IGNORE=193 IncludeDirectory=/CGraphX/C/Include/
+SCOPTS = DEFINE=_DEBUG IGNORE=193 debug=full IncludeDirectory=/CGraphX/C/Include/
+#SCOPTS = OPTIMIZE Optimizerinline OptimizerComplexity=10 OptimizerGlobal OptimizerDepth=1 OptimizerLoop OptimizerTime OptimizerSchedule OptimizerPeephole IGNORE=193 IncludeDirectory=/CGraphX/C/Include/
 
 all: Test ui.lib ImageTest
 

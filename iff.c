@@ -388,19 +388,25 @@ struct ColorSpec* createColorMap(struct IFFctx *ctx, struct IFFChunkData *cmap, 
 	return cs;
 }
 
-ULONG* createColorTable(struct IFFctx *ctx, struct IFFChunkData *cmap)
+ULONG* createColorTable(struct IFFctx *ctx, struct IFFChunkData *cmap, UBYTE minDepth)
 {
 	ULONG *colourTable = NULL, *c = NULL;
-	UWORD i=0, colors = 0 ;
-	UBYTE iffcolorentry[3], *p = NULL;
+	UWORD i=0, colours = 0, allocColours = 0 ;
+	UBYTE iffcolourentry[3], *p = NULL;
 	
-	colors = cmap->length / 3;
-	colourTable = (ULONG *)AllocVec(sizeof(ULONG) * ((colors*3)+2),MEMF_ANY);
+	if (minDepth > 8){
+		minDepth = 8; // Cannot support more than this for planar colour tables
+	}
+	allocColours = colours = cmap->length / 3;
+	if (colours < (1 << minDepth)){
+		allocColours = (1 << minDepth);
+	}
+	colourTable = (ULONG *)AllocVec(sizeof(ULONG) * ((allocColours*3)+2),MEMF_ANY | MEMF_CLEAR);
 	if (!colourTable){
 		return NULL;
 	}
 	c = colourTable;
-	*c++ = colors << 16;
+	*c++ = allocColours << 16;
 	
 	if (ctx->f){			
 		// Align file to start of body content
@@ -410,14 +416,14 @@ ULONG* createColorTable(struct IFFctx *ctx, struct IFFChunkData *cmap)
 		p = ctx->imageBuffer + cmap->offset;
 	}
 	
-	for(i=0;i<colors;i++){
+	for(i=0;i<colours;i++){
 		if (ctx->f){
-			if ((fread(iffcolorentry, 1, 3, ctx->f)) == 0){
+			if ((fread(iffcolourentry, 1, 3, ctx->f)) == 0){
 				if (feof(ctx->f)){
 					break; // no more data in file stream
 				}
 			}
-			p = iffcolorentry;
+			p = iffcolourentry;
 		}else{
 			p = ctx->imageBuffer + cmap->offset + (i*3);
 		}
@@ -433,7 +439,7 @@ __inline UWORD setViewPortColorTable(struct ViewPort *vp, ULONG *c, UBYTE maxDep
 {
 	ULONG tmp = 0, colours = 0, tablecols = 0;
 	
-	colours = (1 << maxDepth)-1;
+	colours = 1 << maxDepth;
 	tablecols = c[0] >> 16;
 	if (tablecols > colours){
 		c[0] = colours << 16;

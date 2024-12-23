@@ -133,8 +133,10 @@ void freeBitMap(struct BitMap *bmp);
 // Set a colour table - faster than setViewPortColorSpec
 UWORD setViewPortColorTable(struct ViewPort *vp, ULONG *c, UBYTE maxDepth);
 
-// Create a colour table compatible with LoadRGB32. Should be freed with FreeVec
-ULONG* createColorTable(struct IFFctx *ctx, struct IFFChunkData *cmap);
+// Create a colour table compatible with LoadRGB32. Should be freed with FreeVec.
+// minDepth required if image colours are less than the required for the actual screen. 
+// Unused colours could be any value. 
+ULONG* createColorTable(struct IFFctx *ctx, struct IFFChunkData *cmap, UBYTE minDepth);
 
 // Free memory for allocated colour table
 void freeColourTable(ULONG *colourTable);
