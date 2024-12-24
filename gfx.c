@@ -4,8 +4,6 @@
 #include <proto/graphics.h>
 #include <exec/memory.h>
 
-// TO DO: there must be a head GfxBobs object to ensure the head isn't lost
-// if first bob is removed
 static void _freeBob(struct GfxGelSys *sys, struct GfxBobs *pBob)
 {
 	if (pBob){
@@ -19,7 +17,10 @@ static void _freeBob(struct GfxGelSys *sys, struct GfxBobs *pBob)
 			pBob->bob.BobVSprite->BorderLine = NULL ;
 			pBob->bob.BobVSprite->CollMask = NULL ;
 		}
-		pBob->bob.DBuffer = NULL ;
+		if (pBob->bob.DBuffer){
+			FreeVec (pBob->bob.DBuffer);
+			pBob->bob.DBuffer = NULL ;
+		}
 		if (pBob->prev){
 			pBob->prev->next = pBob->next;
 		}
@@ -54,12 +55,14 @@ struct GfxBobs *createBob(Wnd *pWnd, struct GfxGelSys *sys, struct VSprite *vs, 
 	
 	rasterSize = sizeof(WORD) * vs->Width * vs->Height * screenDepth;
 	// Allocate chip mem for the screen raster buffers
-	if (!(newBob->bob.SaveBuffer = AllocVec(rasterSize*(dblBuffer?2:1), MEMF_CHIP))){
+	if (!(newBob->bob.SaveBuffer = AllocVec(rasterSize, MEMF_CHIP))){
 		goto cleanup ;
 	}
 	if (dblBuffer){
 		newBob->bob.DBuffer = (struct DBufPacket*)((UBYTE*)newBob+sizeof(struct GfxBobs));
-		newBob->bob.DBuffer->BufBuffer = (WORD*)((UBYTE*)(newBob->bob.SaveBuffer) + (rasterSize));
+		if (!(newBob->bob.DBuffer->BufBuffer = AllocVec(rasterSize, MEMF_CHIP))){
+			goto cleanup;
+		}
 	}
 	
 	// Allocate sprite
@@ -116,11 +119,15 @@ void removeBobs(Wnd *pWnd, struct GfxGelSys *sys)
 		for (b=sys->headBob; b; b = b->next){
 			RemBob(&b->bob); // flag for removal
 		}
-		// Run twice for double buffered bobs
-		SortGList(pWnd->appWindow->RPort);
-		DrawGList(pWnd->appWindow->RPort, ViewPortAddress(pWnd->appWindow));
-		SortGList(pWnd->appWindow->RPort);
-		DrawGList(pWnd->appWindow->RPort, ViewPortAddress(pWnd->appWindow));
+		// Check that the bobs have been removed from the gels list
+		while (TRUE){// Run twice for double buffered bobs
+			SortGList(pWnd->appWindow->RPort);
+			DrawGList(pWnd->appWindow->RPort, ViewPortAddress(pWnd->appWindow));
+			if (pWnd->appWindow->RPort->GelsInfo->gelHead->NextVSprite == pWnd->appWindow->RPort->GelsInfo->gelTail){
+				break;
+			}
+		}
+		
 		WaitTOF() ;
 		
 		for (b=sys->headBob; b; ){
