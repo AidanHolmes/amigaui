@@ -61,6 +61,7 @@ typedef struct App {
 	BOOL isScreenRTG;
 	struct Library *cgfx;
 	struct Library *asl;
+	struct Library *gfx;
 	void *appContext ; // anything you want
 } App;
 
@@ -78,6 +79,15 @@ typedef struct AppGadget {
 // Returns identification of chipset in-use on target machine. 
 // ECS and AGA are safe but OCS doesn't offically identify, but code attempts to retry checks to ensure correct.
 UWORD gfxChipSet(void);
+
+// V36 friendly call to determine depth. Will use V39 GetBitMapAttr if available
+ULONG getScreenDepth(App *myApp);
+
+// V36 friendly call to determine height. Will use V39 GetBitMapAttr if available
+ULONG getScreenHeight(App *myApp);
+
+// V36 friendly call to determine width. Will use V39 GetBitMapAttr if available
+ULONG getScreenWidth(App *myApp);
 
 // Must call this first before any other operations
 // Returns 0 on success

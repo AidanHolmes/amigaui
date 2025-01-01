@@ -12,13 +12,29 @@
 #include <proto/cybergraphics.h>
 
 UWORD _parseIFFImage_callback(struct IFFstack *stack, struct IFFctx *ctx, ULONG offset) ;
+
+UWORD initialiseIFFCtx(struct IFFctx *ctx)
+{
+	memset(ctx, 0, sizeof(struct IFFctx));
+	ctx->gfxlib = OpenLibrary("graphics.library",0);
+	if (!ctx->gfxlib){
+		return IFF_NORESOURCE_ERROR;
+	}
+	return IFF_NO_ERROR;
+}
+
+void closeIFFCtx(struct IFFctx *ctx)
+{
+	if (ctx->gfxlib){
+		CloseLibrary(ctx->gfxlib);
+		ctx->gfxlib = NULL;
+	}
+}
+
 UWORD initialiseIFF(struct IFFgfx *iff)
 {
 	memset(iff, 0, sizeof(struct IFFgfx));
-	//iff->gfxlib = OpenLibrary("graphics.library",0);
-	//if (!iff->gfxlib){
-	//	return IFF_NORESOURCE_ERROR;
-	//}
+	initialiseIFFCtx((struct IFFctx *)iff);
 	return IFF_NO_ERROR;
 }
 
@@ -391,6 +407,7 @@ struct ColorSpec* createColorMap(struct IFFctx *ctx, struct IFFChunkData *cmap, 
 ULONG* createColorTable(struct IFFctx *ctx, struct IFFChunkData *cmap, UBYTE minDepth)
 {
 	ULONG *colourTable = NULL, *c = NULL;
+	UWORD *c4 = NULL;
 	UWORD i=0, colours = 0, allocColours = 0 ;
 	UBYTE iffcolourentry[3], *p = NULL;
 	
@@ -401,12 +418,23 @@ ULONG* createColorTable(struct IFFctx *ctx, struct IFFChunkData *cmap, UBYTE min
 	if (colours < (1 << minDepth)){
 		allocColours = (1 << minDepth);
 	}
-	colourTable = (ULONG *)AllocVec(sizeof(ULONG) * ((allocColours*3)+2),MEMF_ANY | MEMF_CLEAR);
+	if (ctx->gfxlib->lib_Version >=39){
+		colourTable = (ULONG *)AllocVec(sizeof(ULONG) * ((allocColours*3)+2),MEMF_ANY | MEMF_CLEAR);
+	}else{
+		// Allocate a table format similar to RGB32 but also able to work with LoadRGB4. The difference
+		// is the first word contains the number of colours in the table and the last word is zero and unused by LoadRGB4
+		colourTable = (ULONG *)AllocVec(sizeof(UWORD) * (allocColours +2),MEMF_ANY | MEMF_CLEAR);
+	}
 	if (!colourTable){
 		return NULL;
 	}
-	c = colourTable;
-	*c++ = allocColours << 16;
+	if (ctx->gfxlib->lib_Version >=39){
+		c = colourTable;
+		*c++ = allocColours << 16;
+	}else{
+		c4 = (UWORD*)colourTable;
+		*c4++ = allocColours; // store colour count in first word
+	}
 	
 	if (ctx->f){			
 		// Align file to start of body content
@@ -427,30 +455,48 @@ ULONG* createColorTable(struct IFFctx *ctx, struct IFFChunkData *cmap, UBYTE min
 		}else{
 			p = ctx->imageBuffer + cmap->offset + (i*3);
 		}
-		*c++ = (p[0] << 24) | 0xFFFFFF;
-		*c++ = (p[1] << 24) | 0xFFFFFF;
-		*c++ = (p[2] << 24) | 0xFFFFFF;
+		if (ctx->gfxlib->lib_Version >=39){
+			*c++ = (p[0] << 24) | 0xFFFFFF;
+			*c++ = (p[1] << 24) | 0xFFFFFF;
+			*c++ = (p[2] << 24) | 0xFFFFFF;
+		}else{
+			*c4++ = ((p[0] & 0xF0) << 4) | (p[1] & 0xF0) | ((p[2] & 0xF0) >> 4);
+		}
 	}
-	*c = 0;
+	if (ctx->gfxlib->lib_Version >=39){
+		*c = 0;
+	}else{
+		*c4 = 0;
+	}
 	return colourTable;
 }
 
-__inline UWORD setViewPortColorTable(struct ViewPort *vp, ULONG *c, UBYTE maxDepth)
+__inline UWORD setViewPortColorTable(struct IFFctx *ctx, struct ViewPort *vp, ULONG *c, UBYTE maxDepth)
 {
 	ULONG tmp = 0, colours = 0, tablecols = 0;
+	UWORD *colourTable4 = NULL;
 	
 	colours = 1 << maxDepth;
-	tablecols = c[0] >> 16;
-	if (tablecols > colours){
-		c[0] = colours << 16;
-		tmp = c[(colours * 3)+1];
-		c[(colours * 3)+1] = 0;
-	}
-	LoadRGB32(vp, c);
-	
-	if (tablecols > colours){ // restore if reduced colours
-		c[0] = tablecols << 16;
-		c[(colours * 3)+1] = tmp;
+	if (ctx->gfxlib->lib_Version >=39){
+		tablecols = c[0] >> 16;
+		if (tablecols > colours){
+			c[0] = colours << 16;
+			tmp = c[(colours * 3)+1];
+			c[(colours * 3)+1] = 0;
+		}
+		LoadRGB32(vp, c);
+		
+		if (tablecols > colours){ // restore if reduced colours
+			c[0] = tablecols << 16;
+			c[(colours * 3)+1] = tmp;
+		}
+	}else{
+		colourTable4 = (UWORD *)c;
+		tablecols = *colourTable4++;
+		if (tablecols > colours){
+			tablecols = colours ; // reduce colours to match depth
+		}
+		LoadRGB4(vp, colourTable4, (UWORD)tablecols);
 	}
 	return IFF_NO_ERROR;
 }
@@ -488,7 +534,11 @@ UWORD setViewPortColorMap(struct ViewPort *vp, struct IFFctx *ctx, struct IFFChu
 			p = ctx->imageBuffer + cmap->offset + (i*3);
 		}
 		
-		SetRGB32(vp, i, p[0] << 24 | 0xFFFFFF,p[1] << 24 | 0xFFFFFF,p[2] << 24 | 0xFFFFFF);
+		if (ctx->gfxlib->lib_Version >= 39){
+			SetRGB32(vp, i, p[0] << 24 | 0xFFFFFF,p[1] << 24 | 0xFFFFFF,p[2] << 24 | 0xFFFFFF);
+		}else{
+			SetRGB4(vp, i, p[0],p[1],p[2]);
+		}
 	}
 	
 	return IFF_NO_ERROR;
@@ -672,6 +722,51 @@ final:
 	return ret;
 }
 
+static void v36FreeBitMap(struct BitMap *bmp, struct _BitmapHeader *bitmaphdr)
+{
+	UWORD i=0;
+	
+	if (!bmp){
+		return ;
+	}
+	for (i=0;i<bmp->Depth;i++){
+		if (bmp->Planes[i]){
+			FreeRaster(bmp->Planes[i], bitmaphdr->Width, bitmaphdr->Height);
+		}
+	}
+	FreeVec(bmp);
+}
+
+static struct BitMap* v36AllocBitMap(struct _BitmapHeader *bitmaphdr)
+{
+	struct BitMap *bmp = NULL ;
+	UWORD i=0;
+	
+	// May not need to worry about 8 byte alignment here. These are non-AGA systems below v39
+	bmp = AllocVec(sizeof(struct BitMap), MEMF_ANY | MEMF_CLEAR);
+	if (!bmp){
+		goto cleanup;
+	}
+	
+	InitBitMap(bmp, bitmaphdr->Bitplanes, bitmaphdr->Width, bitmaphdr->Height);
+	for (i=0;i<(bitmaphdr->Bitplanes+(bitmaphdr->Masking?1:0));i++){
+		if (bmp->Planes[i] = (PLANEPTR)AllocRaster(bitmaphdr->Width,bitmaphdr->Height)){
+			BltClear(bmp->Planes[i], (bitmaphdr->Width/8)*bitmaphdr->Height, 1);
+		}else{
+			goto cleanup;
+		}
+	}
+
+	return bmp;
+cleanup:
+	if (bmp){
+		v36FreeBitMap(bmp, bitmaphdr);
+	}
+	return NULL;
+}
+
+
+
 struct BitMap* createBitMap(struct IFFctx *ctx, struct IFFChunkData *body, struct _BitmapHeader *bitmaphdr, struct BitMap *friend)
 {
 	// This will read the mask layer but not add to bitmap.
@@ -698,7 +793,11 @@ struct BitMap* createBitMap(struct IFFctx *ctx, struct IFFChunkData *body, struc
 	maskplanes = bitmaphdr->Masking?1:0;
 	
 	// Allocate memory
-	bmp = AllocBitMap(bitmaphdr->Width,bitmaphdr->Height, bitmaphdr->Bitplanes + maskplanes, /*BMF_DISPLAYABLE | BMF_INTERLEAVED | */BMF_CLEAR, friend);
+	if (ctx->gfxlib->lib_Version >=39){
+		bmp = AllocBitMap(bitmaphdr->Width,bitmaphdr->Height, bitmaphdr->Bitplanes + maskplanes, /*BMF_DISPLAYABLE | BMF_INTERLEAVED | */BMF_CLEAR, friend);
+	}else{
+		bmp = v36AllocBitMap(bitmaphdr);
+	}
 	
 	if (bmp){
 		// Work out the length of each row in IFF Body
@@ -713,7 +812,7 @@ struct BitMap* createBitMap(struct IFFctx *ctx, struct IFFChunkData *body, struc
 			// Allocate memory for a single row of data
 			iffrow = AllocVec(rowwidth,MEMF_ANY);
 			if (!iffrow){
-				freeBitMap(bmp);
+				freeBitMap(ctx,bmp,bitmaphdr);
 				//printf("Failed to alloc mem of size %u\n", rowwidth);
 				return NULL ;
 			}
@@ -764,9 +863,13 @@ struct BitMap* createBitMap(struct IFFctx *ctx, struct IFFChunkData *body, struc
 	return bmp;
 }
 
-void freeBitMap(struct BitMap *bmp)
+void freeBitMap(struct IFFctx *ctx, struct BitMap *bmp, struct _BitmapHeader *bitmaphdr)
 {
-	FreeBitMap(bmp);
+	if (ctx->gfxlib->lib_Version >=39){
+		FreeBitMap(bmp);
+	}else{
+		v36FreeBitMap(bmp,bitmaphdr);
+	}
 }
 
 struct IFFnode* findNodeInContainer(struct IFFnode *container, char *szName)

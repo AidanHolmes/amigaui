@@ -145,7 +145,7 @@ int main(int argc, char **argv)
 					setViewPortColorMap(&appWnd->appWindow->WScreen->ViewPort, &gfx.ctx, &cmap, 8);
 					BltBitMap(img, 0,0,appWnd->appWindow->RPort->BitMap,appWnd->appWindow->LeftEdge + appWnd->appWindow->BorderLeft,appWnd->appWindow->TopEdge + appWnd->appWindow->BorderTop,gfx.bitmaphdr.Width,gfx.bitmaphdr.Height,0xC0,0xFF,NULL);
 				}
-				freeBitMap(img);
+				freeBitMap(&gfx.ctx, img, &gfx.bitmaphdr);
 			}else{
 				printf("Failed to create a new bit map from IFF\n");
 			}

@@ -60,6 +60,7 @@ struct GfxBobs *createBob(Wnd *pWnd, struct GfxGelSys *sys, struct VSprite *vs, 
 	}
 	if (dblBuffer){
 		newBob->bob.DBuffer = (struct DBufPacket*)((UBYTE*)newBob+sizeof(struct GfxBobs));
+		// Needs allocating separately from SaveBuffer (otherwise it will crash - possible 8 byte alignment issue)
 		if (!(newBob->bob.DBuffer->BufBuffer = AllocVec(rasterSize, MEMF_CHIP))){
 			goto cleanup;
 		}

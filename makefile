@@ -1,9 +1,16 @@
-#   Copyright 2024 Aidan Holmes
+#   Copyright 2025 Aidan Holmes
 #   Amiga UI wrapper for GadTools
-# Makefile for ui.lib and test application
+# Makefile for ui.lib and test application. This uses SAS/C smake to build
 
-SCOPTS = DEFINE=_DEBUG IGNORE=193 debug=full IncludeDirectory=/CGraphX/C/Include/
-#SCOPTS = OPTIMIZE Optimizerinline OptimizerComplexity=10 OptimizerGlobal OptimizerDepth=1 OptimizerLoop OptimizerTime OptimizerSchedule OptimizerPeephole IGNORE=193 IncludeDirectory=/CGraphX/C/Include/
+# This build requires an install of the CyberGraphics library (such as P96) and the dev headers. 
+# Change to point to location of headers.
+INCDEPENDS=IncludeDirectory=/lib/CGraphX/C/Include/
+
+# Enable for debug
+#SCOPTS = DEFINE=_DEBUG IGNORE=193 debug=full $(INCDEPENDS)
+
+# Enable for non-debug and optimised code
+SCOPTS = OPTIMIZE Optimizerinline OptimizerComplexity=10 OptimizerGlobal OptimizerDepth=1 OptimizerLoop OptimizerTime OptimizerSchedule OptimizerPeephole IGNORE=193 $(INCDEPENDS)
 
 all: Test ui.lib ImageTest
 

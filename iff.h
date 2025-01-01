@@ -123,22 +123,32 @@ struct IFFRenderInfo {
 	UWORD			Height;
 };
 
+// Initiliase standard IFF image parser. Calls initialiseIFFCtx.
 UWORD initialiseIFF(struct IFFgfx *iff);
 UWORD parseIFFImage(struct IFFgfx *iff, FILE *f);
 
+// General initilisation for context struct
+UWORD initialiseIFFCtx(struct IFFctx *ctx);
+
+// Free resources
+void closeIFFCtx(struct IFFctx *ctx);
+
 // Create a bitmap from IFF body chunk and BMHD chunk.
 struct BitMap* createBitMap(struct IFFctx *ctx, struct IFFChunkData *body, struct _BitmapHeader *bitmaphdr, struct BitMap *friend);
-void freeBitMap(struct BitMap *bmp);
+void freeBitMap(struct IFFctx *ctx, struct BitMap *bmp, struct _BitmapHeader *bitmaphdr);
 
 // Set a colour table - faster than setViewPortColorSpec
-UWORD setViewPortColorTable(struct ViewPort *vp, ULONG *c, UBYTE maxDepth);
+UWORD setViewPortColorTable(struct IFFctx *ctx, struct ViewPort *vp, ULONG *c, UBYTE maxDepth);
 
-// Create a colour table compatible with LoadRGB32. Should be freed with FreeVec.
+// Create a colour table compatible with LoadRGB32 or LoadRGB4 (determined by graphics.library version). 
+// Should be freed with freeColourTable.
 // minDepth required if image colours are less than the required for the actual screen. 
-// Unused colours could be any value. 
+// Unused colours could be set to any value and shouldn't be assumed.
+// 4 bit colour tables will have the first word set to number of colours in table. 
+// To use LoadRGB4, the first word should be skipped (+1) to use in the older graphics calls.
 ULONG* createColorTable(struct IFFctx *ctx, struct IFFChunkData *cmap, UBYTE minDepth);
 
-// Free memory for allocated colour table
+// Free memory for allocated colour table. Works for 4 or 32 bit colour tables
 void freeColourTable(ULONG *colourTable);
 
 // Function to set colour map using an IFF CMAP
