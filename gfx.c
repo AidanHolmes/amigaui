@@ -230,3 +230,46 @@ void cleanupGelSys(Wnd *pWnd)
 		pWnd->appWindow->RPort->GelsInfo = NULL ;
 	}
 }
+
+void v36FreeBitMap(struct BitMap *bmp, UWORD Width, UWORD Height)
+{
+	UWORD i=0;
+	
+	if (!bmp){
+		return ;
+	}
+	for (i=0;i<bmp->Depth;i++){
+		if (bmp->Planes[i]){
+			FreeRaster(bmp->Planes[i], Width, Height);
+		}
+	}
+	FreeVec(bmp);
+}
+
+struct BitMap* v36AllocBitMap(UWORD Width, UWORD Height, UBYTE Bitplanes)
+{
+	struct BitMap *bmp = NULL ;
+	UWORD i=0;
+	
+	// May not need to worry about 8 byte alignment here. These are non-AGA systems below v39
+	bmp = AllocVec(sizeof(struct BitMap), MEMF_ANY | MEMF_CLEAR);
+	if (!bmp){
+		goto cleanup;
+	}
+	
+	InitBitMap(bmp, Bitplanes, Width, Height);
+	for (i=0;i<Bitplanes;i++){
+		if (bmp->Planes[i] = (PLANEPTR)AllocRaster(Width,Height)){
+			BltClear(bmp->Planes[i], bmp->BytesPerRow*Height, 1); 
+		}else{
+			goto cleanup;
+		}
+	}
+
+	return bmp;
+cleanup:
+	if (bmp){
+		v36FreeBitMap(bmp, Width, Height);
+	}
+	return NULL;
+}

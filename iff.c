@@ -2,6 +2,7 @@
 //   IFF file parser
 
 #include "iff.h"
+#include "gfx.h"
 #include "debug.h"
 #include <string.h>
 #include <proto/exec.h>
@@ -722,50 +723,15 @@ final:
 	return ret;
 }
 
-static void v36FreeBitMap(struct BitMap *bmp, struct _BitmapHeader *bitmaphdr)
+static void _v36FreeBitMap(struct BitMap *bmp, struct _BitmapHeader *bitmaphdr)
 {
-	UWORD i=0;
-	
-	if (!bmp){
-		return ;
-	}
-	for (i=0;i<bmp->Depth;i++){
-		if (bmp->Planes[i]){
-			FreeRaster(bmp->Planes[i], bitmaphdr->Width, bitmaphdr->Height);
-		}
-	}
-	FreeVec(bmp);
+	v36FreeBitMap(bmp, bitmaphdr->Width, bitmaphdr->Height);
 }
 
-static struct BitMap* v36AllocBitMap(struct _BitmapHeader *bitmaphdr)
+static struct BitMap* _v36AllocBitMap(struct _BitmapHeader *bitmaphdr)
 {
-	struct BitMap *bmp = NULL ;
-	UWORD i=0;
-	
-	// May not need to worry about 8 byte alignment here. These are non-AGA systems below v39
-	bmp = AllocVec(sizeof(struct BitMap), MEMF_ANY | MEMF_CLEAR);
-	if (!bmp){
-		goto cleanup;
-	}
-	
-	InitBitMap(bmp, bitmaphdr->Bitplanes, bitmaphdr->Width, bitmaphdr->Height);
-	for (i=0;i<(bitmaphdr->Bitplanes+(bitmaphdr->Masking?1:0));i++){
-		if (bmp->Planes[i] = (PLANEPTR)AllocRaster(bitmaphdr->Width,bitmaphdr->Height)){
-			BltClear(bmp->Planes[i], (bitmaphdr->Width/8)*bitmaphdr->Height, 1);
-		}else{
-			goto cleanup;
-		}
-	}
-
-	return bmp;
-cleanup:
-	if (bmp){
-		v36FreeBitMap(bmp, bitmaphdr);
-	}
-	return NULL;
+	return v36AllocBitMap(bitmaphdr->Width, bitmaphdr->Height, bitmaphdr->Bitplanes+(bitmaphdr->Masking?1:0));
 }
-
-
 
 struct BitMap* createBitMap(struct IFFctx *ctx, struct IFFChunkData *body, struct _BitmapHeader *bitmaphdr, struct BitMap *friend)
 {
@@ -796,7 +762,7 @@ struct BitMap* createBitMap(struct IFFctx *ctx, struct IFFChunkData *body, struc
 	if (ctx->gfxlib->lib_Version >=39){
 		bmp = AllocBitMap(bitmaphdr->Width,bitmaphdr->Height, bitmaphdr->Bitplanes + maskplanes, /*BMF_DISPLAYABLE | BMF_INTERLEAVED | */BMF_CLEAR, friend);
 	}else{
-		bmp = v36AllocBitMap(bitmaphdr);
+		bmp = _v36AllocBitMap(bitmaphdr);
 	}
 	
 	if (bmp){
@@ -868,7 +834,7 @@ void freeBitMap(struct IFFctx *ctx, struct BitMap *bmp, struct _BitmapHeader *bi
 	if (ctx->gfxlib->lib_Version >=39){
 		FreeBitMap(bmp);
 	}else{
-		v36FreeBitMap(bmp,bitmaphdr);
+		_v36FreeBitMap(bmp,bitmaphdr);
 	}
 }
 

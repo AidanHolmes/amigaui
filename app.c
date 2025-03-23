@@ -289,7 +289,9 @@ void appCleanUp(App *myApp)
 			UnlockPubScreen(NULL, myApp->appScreen); // should be unlocked after first openwindow call
 		}else{
 			// May fail - TO DO: what to do?
-			CloseScreen(myApp->appScreen);
+			if (!CloseScreen(myApp->appScreen)){
+				printf("Failed to close screen\n");
+			}
 		}
 		myApp->appScreen = NULL ;
 	}

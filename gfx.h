@@ -28,7 +28,8 @@ void cleanupGelSys(Wnd *pWnd);
 struct GfxBobs *createBob(Wnd *pWnd, struct GfxGelSys *sys, struct VSprite *vs, UWORD screenDepth, BOOL dblBuffer);
 void removeBobs(Wnd *pWnd, struct GfxGelSys *sys);
 
-
+void v36FreeBitMap(struct BitMap *bmp, UWORD Width, UWORD Height);
+struct BitMap* v36AllocBitMap(UWORD Width, UWORD Height, UBYTE Bitplanes);
 
 
 #endif
