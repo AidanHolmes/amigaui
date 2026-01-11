@@ -22,4 +22,4 @@ IntGad, NumGad, StringGad, TxtGad are all text entry or viewing controls. Button
 ## Building
 All files are written for SAS/C. This *should* build in any compiler, but some specific macros and auto library creation may require some changes.
 The makefile is written for smake. 
-Run smake to build all files.
+Run smake to build all Debug and Release targets. Applications using the lib should like to the required target.
