@@ -40,6 +40,7 @@ struct GfxBobs *createBob(Wnd *pWnd, struct GfxGelSys *sys, struct VSprite *vs, 
 	ULONG lineSize = 0, planeSize =0, rasterSize = 0, structSizes = 0;
 	struct GfxBobs *newBob = NULL, *b = NULL ;
 	BOOL bRet = FALSE ;
+	struct Library *GfxBase = pWnd->app->gfx;
 	
 	lineSize = sizeof(WORD) * vs->Width;
 	planeSize = lineSize * vs->Height;
@@ -106,6 +107,9 @@ cleanup:
 void removeBobs(Wnd *pWnd, struct GfxGelSys *sys)
 {
 	struct GfxBobs *b, *tb;
+	struct Library *GfxBase = pWnd->app->gfx;
+	struct Library *IntuitionBase = pWnd->app->intu;
+	
 	if (!pWnd->appWindow){
 		return;
 	}
@@ -146,6 +150,7 @@ BOOL initialiseGelSys(Wnd *pWnd)
 	struct VSprite  *vsHead = NULL;
 	struct VSprite  *vsTail = NULL;
 	BOOL bRet = FALSE ;
+	struct Library *GfxBase = pWnd->app->gfx;
 	
 	
 	if (!pWnd->appWindow){
@@ -231,7 +236,7 @@ void cleanupGelSys(Wnd *pWnd)
 	}
 }
 
-void v36FreeBitMap(struct BitMap *bmp, UWORD Width, UWORD Height)
+void v36FreeBitMap(struct BitMap *bmp, UWORD Width, UWORD Height, struct Library *GfxBase)
 {
 	UWORD i=0;
 	
@@ -246,7 +251,7 @@ void v36FreeBitMap(struct BitMap *bmp, UWORD Width, UWORD Height)
 	FreeVec(bmp);
 }
 
-struct BitMap* v36AllocBitMap(UWORD Width, UWORD Height, UBYTE Bitplanes)
+struct BitMap* v36AllocBitMap(UWORD Width, UWORD Height, UBYTE Bitplanes, struct Library *GfxBase)
 {
 	struct BitMap *bmp = NULL ;
 	UWORD i=0;
@@ -269,7 +274,7 @@ struct BitMap* v36AllocBitMap(UWORD Width, UWORD Height, UBYTE Bitplanes)
 	return bmp;
 cleanup:
 	if (bmp){
-		v36FreeBitMap(bmp, Width, Height);
+		v36FreeBitMap(bmp, Width, Height, GfxBase);
 	}
 	return NULL;
 }

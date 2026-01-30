@@ -10,16 +10,16 @@ DEBUG = $(DEBUGDIR)/makefile
 
 # This build requires an install of the CyberGraphics library (such as P96) and the dev headers. 
 # Change to point to location of headers.
-INCDEPENDS=IncludeDirectory=//CGraphX/C/Include/
+INCDEPENDS=IncludeDirectory=//CGraphX/C/Include/ IncludeDirectory=//NDK3.2R4/Include_H
 
 # optimised and release version
 #optdepth
 # defines the maximum depth of function calls to be Mined. The
 # range is 0 to 6, and the default value is 3.
-PRODCOPTS = OPTIMIZE Optimizerinline OptimizerComplexity=30 OptimizerGlobal OptimizerDepth=6 OptimizerLoop OptimizerTime OptimizerSchedule OptimizerPeephole IGNORE=193 $(INCDEPENDS)
+PRODCOPTS = nocheckabort OPTIMIZE Optimizerinline OptimizerComplexity=30 OptimizerGlobal OptimizerDepth=6 OptimizerLoop OptimizerTime OptimizerSchedule OptimizerPeephole IGNORE=193 $(INCDEPENDS)
 
 # debug version build options
-DBGCOPTS = DEFINE=_DEBUG IGNORE=193 debug=full $(INCDEPENDS)
+DBGCOPTS = nocheckabort DEFINE=_DEBUG IGNORE=193 debug=full $(INCDEPENDS)
 
 all: $(RELEASE) $(DEBUG)
 	execute <<

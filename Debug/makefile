@@ -11,7 +11,7 @@ OBJSTest = $(OBJ)/main.o
 OBJSImageTest = $(OBJ)/imagetest.o
 
 # Enable for non-debug and optimised code
-SCOPTS = DEFINE=_DEBUG IGNORE=193 debug=full IncludeDirectory=//CGraphX/C/Include/
+SCOPTS = nocheckabort DEFINE=_DEBUG IGNORE=193 debug=full IncludeDirectory=//CGraphX/C/Include/ IncludeDirectory=//NDK3.2R4/Include_H
 all: dirs $(BIN)/$(LIBNAME) $(BIN)/Test $(BIN)/ImageTest
 
 dirs:

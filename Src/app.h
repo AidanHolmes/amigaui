@@ -8,6 +8,7 @@
 #include <libraries/gadtools.h>
 #include <proto/asl.h>
 #include <libraries/asl.h>
+#include "compatibility.h"
 
 #define GFX_IS_OCS  0x0001
 #define GFX_IS_ECS  0x0002
@@ -54,6 +55,7 @@ typedef struct App {
 	struct Wnd mainWnd;
 	struct IORequest *tmr;
 	ULONG wake_secs;
+	ULONG wake_micros;
 	ULONG wake_sigs;
 	callbackWakeSig fn_wakeSigs;
 	struct Wnd *modalWnd;
@@ -62,6 +64,9 @@ typedef struct App {
 	struct Library *cgfx;
 	struct Library *asl;
 	struct Library *gfx;
+	struct Library *intu;
+	struct Library *gadtools;
+	struct Library *util;
 	void *appContext ; // anything you want
 } App;
 
@@ -168,6 +173,13 @@ struct FileRequester* openFileLoad(Wnd *parent, UBYTE *szTitle, UBYTE *szDrawer,
 
 // Add a menu
 BOOL createMenu(Wnd *wnd, struct NewMenu *newm);
+
+// Setup a wake timer which calls fn_wakeSigs at the timeout set by
+// calling this funciton. 
+// Set secs and millis to zero to turn off the periodic waking.
+// fn_wakeSigs will be called with a zero value in sigs when called
+// by a timeout.
+void setWakeTimer(App *myApp, ULONG secs, ULONG micros);
 
 
 #endif

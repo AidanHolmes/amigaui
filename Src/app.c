@@ -11,23 +11,38 @@
 #include <cybergraphx/cybergraphics.h>
 #include <proto/cybergraphics.h>
 #include <exec/libraries.h>
+#include <proto/utility.h>
 
 #define AslBase myApp->asl
 #define GfxBase myApp->gfx
+#define IntuitionBase myApp->intu
+#define GadToolsBase myApp->gadtools
+#define CyberGfxBase myApp->cgfx
+#define UtilityBase myApp->util
 
 //#define MIN_IDCMP (IDCMP_GADGETUP | IDCMP_NEWSIZE | IDCMP_ACTIVEWINDOW | IDCMP_INACTIVEWINDOW | IDCMP_CHANGEWINDOW | IDCMP_CLOSEWINDOW | LISTVIEWIDCMP | TEXTIDCMP)
 #define MIN_IDCMP (IDCMP_GADGETUP | IDCMP_NEWSIZE | IDCMP_ACTIVEWINDOW | IDCMP_INACTIVEWINDOW | IDCMP_CHANGEWINDOW | IDCMP_CLOSEWINDOW | IDCMP_MENUPICK)
 
 Wnd* _findAppWndR(Wnd *fromWnd, struct Window *find, UBYTE *strfind);
 
-void _reset_list(struct List *l)
+static void _showErrorRequester(App *myApp, char *Text, char *Button) 
+{
+	struct EasyStruct Req;
+
+	Req.es_Title        = "App Error";
+	Req.es_TextFormat   = (UBYTE*)Text;
+	Req.es_GadgetFormat = (UBYTE*)Button;
+	EasyRequestArgs(NULL, &Req, NULL, NULL);
+}
+
+static void _reset_list(struct List *l)
 {
 	l->lh_Tail = NULL;
     l->lh_Head = (struct Node *)&l->lh_Tail;
     l->lh_TailPred = (struct Node *)&l->lh_Head;
 }
 
-ULONG _waitTimer(struct IORequest* tmr, ULONG secs, ULONG micro, ULONG sigs)
+static ULONG _waitTimer(struct IORequest* tmr, ULONG secs, ULONG micro, ULONG sigs)
 {
     ULONG sig = 1 << tmr->io_Message.mn_ReplyPort->mp_SigBit;
 
@@ -57,7 +72,7 @@ ULONG _waitTimer(struct IORequest* tmr, ULONG secs, ULONG micro, ULONG sigs)
     return sigs ;
 }
 
-struct IORequest* _createTimer(void)
+static struct IORequest* _createTimer(void)
 {
     struct MsgPort *p = CreateMsgPort();
     if (p){
@@ -74,7 +89,7 @@ struct IORequest* _createTimer(void)
     return NULL;
 }
 
-void _closeTimer(struct IORequest *tmr)
+static void _closeTimer(struct IORequest *tmr)
 {
 	struct MsgPort *port = NULL ;
     if (tmr){
@@ -172,11 +187,11 @@ int createAppScreen(App *myApp, BOOL hires, BOOL laced, ULONG *tags)
 	}
 	myApp->appScreen = OpenScreenTagList(&myApp->screeninfo, (struct TagItem*)tags);
 	if (!myApp->appScreen){
-		printf("Cannot open custom screen. App must exit\n") ;
+		_showErrorRequester(myApp, "Cannot open custom screen", "Exit");
 		return 5;
 	}
 	if (!(myApp->visual = GetVisualInfo(myApp->appScreen,TAG_DONE))) {
-		printf("Failed to get visual info. App must exit\n");	
+		_showErrorRequester(myApp, "Failed to get visual info", "Exit");
 		return(5);
 	}
 	if (GfxBase->lib_Version >= 39){
@@ -190,26 +205,9 @@ int createAppScreen(App *myApp, BOOL hires, BOOL laced, ULONG *tags)
 }
 
 int initialiseApp(App *myApp)
-{
-	struct Library *CyberGfxBase = NULL;
-	
-	myApp->appScreen = NULL ;
-	myApp->msgPort = NULL ;
-	myApp->tmr = NULL ;
-	myApp->fn_wakeSigs = NULL ;
-	myApp->wake_secs = 0;
-	myApp->wake_sigs = 0;
-	myApp->modalWnd = NULL ;
-	myApp->fileRequester = NULL ;
-	myApp->menu = NULL ;
-	myApp->customscreen = FALSE ;
-	myApp->closedispatch = FALSE;
-	myApp->isScreenRTG = FALSE;
-	myApp->cgfx = NULL ;
-	myApp->asl = NULL;
-	myApp->appContext = NULL;
-	
-	memset(&myApp->screeninfo, 0, sizeof(struct NewScreen));
+{	
+	int ret = 5 ;
+	memset(myApp, 0, sizeof(App));
 	myApp->screeninfo.Width = STDSCREENWIDTH;
 	myApp->screeninfo.Height = STDSCREENHEIGHT;
 	myApp->screeninfo.Depth = 3;
@@ -219,21 +217,35 @@ int initialiseApp(App *myApp)
 	myApp->screeninfo.BlockPen = (UBYTE)-1;
 	
 	if (!(myApp->tmr = _createTimer())){
-		printf("Failed to open timer device.\n");
-		return(5);
+		_showErrorRequester(myApp, "Failed to open timer device", "Exit");
+		goto exit;
+	}
+	
+	if (!(myApp->intu=OpenLibrary("intuition.library",36L))){
+		_showErrorRequester(myApp, "Failed to open intuition library", "Exit");
+		goto exit;
+	}
+
+	if (!(myApp->gadtools=OpenLibrary("gadtools.library",36L))){
+		_showErrorRequester(myApp, "Failed to open gadtools library", "Exit");
+		goto exit;
+	}
+	
+	if (!(myApp->util=OpenLibrary("utility.library",37L))){
+		_showErrorRequester(myApp, "Failed to open utility library", "Exit");
+		goto exit;
 	}
 	
 	if(!(myApp->gfx=OpenLibrary("graphics.library",36L))){
-		printf("Failed to open graphics library - min V36 required\n");
-		return 5;
+		_showErrorRequester(myApp, "Failed to open graphics library", "Exit");
+		goto exit;
 	}
 	
     /* Lock screen and get visual info for gadtools */
 	if (myApp->appScreen = LockPubScreen(NULL)) {
 		if (!(myApp->visual = GetVisualInfo(myApp->appScreen,TAG_DONE))) {
-			appCleanUp(myApp) ;
-			printf("Failed to get visual info.\n");
-			return(5);
+			_showErrorRequester(myApp, "Failed to get visual info", "Exit");
+			goto exit;
 		}
 		if (GfxBase->lib_Version >= 39){
 			if ((GetBitMapAttr(myApp->appScreen->RastPort.BitMap,BMA_FLAGS) & BMF_STANDARD) == 0){
@@ -242,32 +254,35 @@ int initialiseApp(App *myApp)
 		}
 	}
 	else {
-		printf("Failed to lock screen.\n");
-		return(5);
+		_showErrorRequester(myApp, "Failed to lock screen", "Exit");
+		goto exit;
 	}
 	
 	if (!(myApp->msgPort = CreateMsgPort())){
-		appCleanUp(myApp) ;
-		printf("Failed to create shared message port.\n");
-		return (5) ;
+		_showErrorRequester(myApp, "Failed to create UI message port", "Exit");
+		goto exit;
 	}
 	if((myApp->asl=OpenLibrary("asl.library",36L))){
-		if (!(myApp->fileRequester = AllocAslRequest(ASL_FileRequest, NULL))){
-			appCleanUp(myApp) ;
-			printf("Failed to allocate ASL file requester\n");
-			return (5);
+		if (!(myApp->mainWnd.fileRequester = AllocAslRequest(ASL_FileRequest, NULL))){
+			_showErrorRequester(myApp, "Failed to allocate ASL file requester", "Exit");
+			goto exit;
 		}
 	}
 	
 	if(myApp->cgfx=OpenLibrary("cybergraphics.library",41L)){
-		CyberGfxBase = myApp->cgfx ;
 		myApp->isScreenRTG = GetCyberMapAttr(myApp->appScreen->RastPort.BitMap, CYBRMATTR_ISCYBERGFX);
 	}
 	
-	return initialiseWnd(myApp, &myApp->mainWnd, NULL) ;
+	ret = initialiseWnd(myApp, &myApp->mainWnd, NULL) ;
+exit:
+	if (ret != 0){
+		// Error, clean up
+		appCleanUp(myApp);
+	}
+	return ret;
 }
 
-__inline struct Wnd* getAppWnd(App *app)
+__INLINE__ struct Wnd* getAppWnd(App *app)
 {
 	return &app->mainWnd;
 }
@@ -290,20 +305,40 @@ void appCleanUp(App *myApp)
 		}else{
 			// May fail - TO DO: what to do?
 			if (!CloseScreen(myApp->appScreen)){
-				printf("Failed to close screen\n");
+				_showErrorRequester(myApp, "Failed to close screen", "Exit");
 			}
 		}
 		myApp->appScreen = NULL ;
 	}
-	if (myApp->fileRequester){
-		FreeAslRequest(myApp->fileRequester);
-		myApp->fileRequester = NULL ;
+	if (myApp->mainWnd.fileRequester){
+		FreeAslRequest(myApp->mainWnd.fileRequester);
+		myApp->mainWnd.fileRequester = NULL ;
 	}
+	_closeTimer(myApp->tmr);
 	if (myApp->cgfx){
 		CloseLibrary(myApp->cgfx);
 		myApp->cgfx = NULL;
 	}
-	_closeTimer(myApp->tmr);
+	if (myApp->asl){
+		CloseLibrary(myApp->asl);
+		myApp->asl = NULL;
+	}
+	if (myApp->gfx){
+		CloseLibrary(myApp->gfx);
+		myApp->gfx = NULL;
+	}
+	if (myApp->intu){
+		CloseLibrary(myApp->intu);
+		myApp->intu = NULL;
+	}
+	if (myApp->gadtools){
+		CloseLibrary(myApp->gadtools);
+		myApp->gadtools = NULL;
+	}
+	if (myApp->util){
+		CloseLibrary(myApp->util);
+		myApp->util = NULL;
+	}
 }
 
 int initialiseWnd(App *myApp, Wnd *myWnd, UBYTE *wndTitle)
@@ -342,8 +377,8 @@ int initialiseWnd(App *myApp, Wnd *myWnd, UBYTE *wndTitle)
 	
 	/* Create the gadget list */
 	if (!(myWnd->gtail = CreateContext(&(myWnd->info.FirstGadget)))) {
-		printf("Failed to create gadtools context.\n");
-		return(5);
+		_showErrorRequester(myApp, "Failed to create gadtools context", "Exit");
+		return 5;
 	}
 	
 	return 0 ;
@@ -351,6 +386,8 @@ int initialiseWnd(App *myApp, Wnd *myWnd, UBYTE *wndTitle)
 
 int openAppWindow(Wnd *myWnd, ULONG *tags)
 {
+	App *myApp = myWnd->app;
+	
 	if (myWnd->appWindow){
 		// Already open
 		return 0 ;
@@ -397,6 +434,7 @@ void closeAppWindow(Wnd *myWnd)
 {
 	struct IntuiMessage *msg = NULL;
 	struct Node *n = NULL ;
+	App *myApp = myWnd->app;
 	
 	Forbid();
 	
@@ -428,6 +466,8 @@ void closeAppWindow(Wnd *myWnd)
 
 void wndSetRelativePos(Wnd *primary, Wnd *secondary, BOOL centre)
 {
+	App *myApp = primary->app;
+	
 	// align top left or over the centre of primary window
 	WORD xcent,ycent;
 	
@@ -470,13 +510,15 @@ void wndSetRelativePos(Wnd *primary, Wnd *secondary, BOOL centre)
 	}
 }
 
-__inline void wndSetModal(Wnd *myWnd, BOOL modal)
+__INLINE__ void wndSetModal(Wnd *myWnd, BOOL modal)
 {
 	myWnd->modal = modal ;
 }
 
 void wndSetSize(Wnd *myWnd, WORD width, WORD height)
 {
+	App *myApp = myWnd->app;
+	
 	myWnd->info.Width = width;
 	myWnd->info.Height = height;
 	if (myWnd->appWindow){
@@ -487,6 +529,8 @@ void wndSetSize(Wnd *myWnd, WORD width, WORD height)
 
 void wndSetIDCMP(Wnd *myWnd, ULONG idcmp)
 {
+	App *myApp = myWnd->app;
+	
 	idcmp |= MIN_IDCMP; // must have something otherwise shared msgport is destroyed
 	
 	myWnd->idcmp = idcmp;
@@ -528,6 +572,8 @@ Wnd* addChildWnd(Wnd *wnd, UBYTE *name, UBYTE *title)
 
 struct Gadget* addAppGadget(Wnd *myWnd, AppGadget *gad)
 {
+	App *myApp = myWnd->app;
+	
     gad->def.ng_VisualInfo = myWnd->app->visual;
     gad->gadget = CreateGadgetA(gad->gadgetkind, myWnd->gtail, &(gad->def), gad->gadgetTags);
     if (!gad->gadget){
@@ -549,7 +595,10 @@ struct Gadget* addAppGadget(Wnd *myWnd, AppGadget *gad)
 
 void delAppGadget(AppGadget *gad)
 {
+	App *myApp = NULL;
+	
 	if (gad->wnd && gad->wnd->appWindow){
+		myApp = gad->wnd->app;
 		RemoveGadget(gad->wnd->appWindow, gad->gadget);
 		//FreeGadgets(gad->gadget);
 		gad->gadget = NULL ;
@@ -560,8 +609,10 @@ void delAppGadget(AppGadget *gad)
 
 void setGadgetTags(AppGadget *g, ULONG *tags)
 {
+	App *myApp = NULL;
     g->gadgetTags = (struct TagItem *)tags;
 	if (g->wnd && g->wnd->appWindow){
+		myApp = g->wnd->app;
 		// Window exists. The gadget will need updating
 		GT_SetGadgetAttrsA(g->gadget, g->wnd->appWindow, NULL, (struct TagItem *)tags) ;
 	}
@@ -570,6 +621,7 @@ void setGadgetTags(AppGadget *g, ULONG *tags)
 void wndCleanUp(Wnd *myWnd)
 {
 	struct Node *n = NULL ;
+	App *myApp = myWnd->app;
 	
 	if (!IsListEmpty(&myWnd->childWnd)){
 		while((n=RemHead(&myWnd->childWnd))){
@@ -601,6 +653,7 @@ Wnd* _findAppWndR(Wnd *fromWnd, struct Window *find, UBYTE *strfind)
 {
 	struct Node *n = NULL ;
 	Wnd *w = NULL ;
+	App *myApp = fromWnd->app;
 	
 	if (IsListEmpty(&fromWnd->childWnd)){
 		return NULL ;
@@ -613,7 +666,7 @@ Wnd* _findAppWndR(Wnd *fromWnd, struct Window *find, UBYTE *strfind)
 			}
 		}
 		if (strfind){
-			if (w->_n.ln_Name && stricmp(w->_n.ln_Name, strfind) == 0){
+			if (w->_n.ln_Name && Stricmp(w->_n.ln_Name, strfind) == 0){
 				return w;
 			}
 		}
@@ -667,14 +720,16 @@ struct FileRequester* openFileLoad(Wnd *parent, UBYTE *szTitle, UBYTE *szDrawer,
 		tags[3].ti_Tag = ASLFR_InitialPattern;
 		tags[3].ti_Data = (ULONG)szPattern;
 	}
-	if (AslRequest(myApp->fileRequester, tags)){
-		return myApp->fileRequester;
+	if (AslRequest(myApp->mainWnd.fileRequester, tags)){
+		return myApp->mainWnd.fileRequester;
 	}
 	return NULL;
 }
 
 BOOL createMenu(Wnd *wnd, struct NewMenu *newm)
 {
+	App *myApp = wnd->app;
+	
 	wnd->menu = CreateMenusA(newm, 0);
 	if (!wnd->menu){
 		return FALSE;
@@ -689,6 +744,12 @@ BOOL createMenu(Wnd *wnd, struct NewMenu *newm)
 	SetMenuStrip(wnd->appWindow, wnd->menu);
 	
 	return TRUE;
+}
+
+void setWakeTimer(App *myApp, ULONG secs, ULONG micros)
+{
+	myApp->wake_secs = secs;
+	myApp->wake_micros = micros;
 }
 
 int dispatch(App *myApp)
@@ -707,7 +768,11 @@ int dispatch(App *myApp)
 	app_sig = 1 << myApp->msgPort->mp_SigBit;
     
 	while (myApp->closedispatch == FALSE) {
-		sigs = _waitTimer(myApp->tmr, myApp->wake_secs,0, myApp->wake_sigs | app_sig);
+		if (myApp->wake_secs > 0 || myApp->wake_micros > 0){
+			sigs = _waitTimer(myApp->tmr, myApp->wake_secs,myApp->wake_micros, myApp->wake_sigs | app_sig);
+		}else{
+			sigs = Wait(myApp->wake_sigs | app_sig);
+		}
 
 		if (sigs & app_sig){
 			while ((msg = GT_GetIMsg(myApp->msgPort))){
@@ -767,7 +832,7 @@ int dispatch(App *myApp)
 			}
 		}
 		
-		if (sigs & ~app_sig || intuiTick){
+		if (sigs & ~app_sig || intuiTick || sigs == 0){
 			// other signals raised
 			if (myApp->fn_wakeSigs){
 				myApp->fn_wakeSigs(myApp, sigs & myApp->wake_sigs);

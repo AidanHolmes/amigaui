@@ -11,7 +11,7 @@ OBJSTest = $(OBJ)/main.o
 OBJSImageTest = $(OBJ)/imagetest.o
 
 # Enable for non-debug and optimised code
-SCOPTS = OPTIMIZE Optimizerinline OptimizerComplexity=30 OptimizerGlobal OptimizerDepth=6 OptimizerLoop OptimizerTime OptimizerSchedule OptimizerPeephole IGNORE=193 IncludeDirectory=//CGraphX/C/Include/
+SCOPTS = nocheckabort OPTIMIZE Optimizerinline OptimizerComplexity=30 OptimizerGlobal OptimizerDepth=6 OptimizerLoop OptimizerTime OptimizerSchedule OptimizerPeephole IGNORE=193 IncludeDirectory=//CGraphX/C/Include/ IncludeDirectory=//NDK3.2R4/Include_H
 all: dirs $(BIN)/$(LIBNAME) $(BIN)/Test $(BIN)/ImageTest
 
 dirs:

@@ -110,8 +110,11 @@ struct Node *lvAddEntry(AppGadget *lvg, int pos, char *szEntry, void *pData)
 
 void lvHighlightItem(Wnd *myWnd, AppGadget *lvg, ULONG pos)
 {
+	struct Library *GadToolsBase = NULL ;
 	ListViewGadget *lvgData = NULL;
 
+	GadToolsBase = myWnd->app->gadtools;
+	
     if (lvg){
         if (lvg->data){
             lvgData = (ListViewGadget *)lvg->data ;
@@ -123,7 +126,10 @@ void lvHighlightItem(Wnd *myWnd, AppGadget *lvg, ULONG pos)
 
 void lvUpdateList(Wnd *myWnd, AppGadget *lvg)
 {
+	struct Library *GadToolsBase = NULL ;
     ListViewGadget *lvgData = NULL;
+
+	GadToolsBase = myWnd->app->gadtools;
 
     if (lvg){
         if (lvg->data){

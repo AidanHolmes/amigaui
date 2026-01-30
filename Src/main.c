@@ -21,7 +21,7 @@ struct TextAttr topaz8 = {
 
 ULONG txtTags[] = {GTST_MaxChars, 200, TAG_DONE};
 ULONG intTags[] = {GTNM_Border, TRUE, TAG_DONE};
-ULONG listTags[] = {GTLV_ShowSelected, NULL, TAG_DONE};
+ULONG listTags[] = {GTLV_ShowSelected, 0, TAG_DONE};
 AppGadget txtCtrl = {STRING_KIND, {63, 26, 172, 13, (UBYTE *)"Name", &topaz8, 1, PLACETEXT_LEFT, NULL, NULL}};
 AppGadget intCtrl = {TEXT_KIND,{62, 50, 175, 15, (UBYTE *)"Output", &topaz8, 2, PLACETEXT_LEFT, NULL, NULL}};
 AppGadget btnCtrl = {BUTTON_KIND,{111, 105, 54, 31, (UBYTE *)"OK", &topaz8, 3, PLACETEXT_IN, NULL, NULL}};

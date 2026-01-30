@@ -1,0 +1,36 @@
+# Version - these values are mastered here and overwrite the generated values in makefiles for Debug and Release
+LIBDEVMAJOR = 1
+LIBDEVMINOR = 0
+LIBDEVDATE = '11.01.2026'
+
+RELEASEDIR = Release
+DEBUGDIR = Debug
+RELEASEMK = $(RELEASEDIR)/makefile.vbcc
+DEBUGMK = $(DEBUGDIR)/makefile.vbcc
+TEMPLATEMAKEFILE = makefile.master.vbcc
+
+# Standard NDK header linking
+INCDEPENDS= -I\/opt\/amiga\/NDK3.2\/Include_H
+
+# optimised and release version
+PRODCOPTS = +aos68k -lamiga -O2 $(INCDEPENDS)
+
+# debug version build options
+DBGCOPTS = +aos68k -lamiga -g -hunkdebug $(INCDEPENDS)
+
+all: $(RELEASEMK) $(DEBUGMK)
+	cd $(RELEASEDIR) && make -f makefile.vbcc LIBDEVMAJOR=$(LIBDEVMAJOR) LIBDEVMINOR=$(LIBDEVMINOR) LIBDEVDATE=$(LIBDEVDATE)
+	cd $(DEBUGDIR) && make -f makefile.vbcc LIBDEVMAJOR=$(LIBDEVMAJOR) LIBDEVMINOR=$(LIBDEVMINOR) LIBDEVDATE=$(LIBDEVDATE)
+	
+clean:
+	cd $(RELEASEDIR) && make -f makefile.vbcc clean
+	cd $(DEBUGDIR) && make -f makefile.vbcc clean
+	
+$(RELEASEMK): $(TEMPLATEMAKEFILE) makefile.vbcc
+	mkdir -p $(RELEASEDIR)
+	sed -r 's/^SCOPTS.+$$/SCOPTS = $(PRODCOPTS)/' $(TEMPLATEMAKEFILE) > $(RELEASEMK)
+	
+$(DEBUGMK): $(TEMPLATEMAKEFILE) makefile.vbcc
+	mkdir -p $(DEBUGDIR)
+	sed -r 's/^SCOPTS.+$$/SCOPTS = $(DBGCOPTS)/' $(TEMPLATEMAKEFILE) > $(DEBUGMK)
+	

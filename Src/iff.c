@@ -12,7 +12,9 @@
 #include <cybergraphx/cybergraphics.h>
 #include <proto/cybergraphics.h>
 
-UWORD _parseIFFImage_callback(struct IFFstack *stack, struct IFFctx *ctx, ULONG offset) ;
+#define GfxBase ctx->gfxlib
+
+static UWORD _parseIFFImage_callback(struct IFFstack *stack, struct IFFctx *ctx, ULONG offset) ;
 
 UWORD initialiseIFFCtx(struct IFFctx *ctx)
 {
@@ -39,7 +41,7 @@ UWORD initialiseIFF(struct IFFgfx *iff)
 	return IFF_NO_ERROR;
 }
 
-UWORD _parseIFFImage_callback(struct IFFstack *stack, struct IFFctx *ctx, ULONG offset) 
+static UWORD _parseIFFImage_callback(struct IFFstack *stack, struct IFFctx *ctx, ULONG offset) 
 {
 	struct IFFgfx *iff = NULL;
 	void *to = NULL;
@@ -72,7 +74,7 @@ UWORD _parseIFFImage_callback(struct IFFstack *stack, struct IFFctx *ctx, ULONG 
 			return IFF_NOTIFF_ERROR;
 		}
 		if (ctx->f){
-			if ((fread(to, 1, readSize, iff->f)) != readSize){
+			if ((fread(to, 1, readSize, iff->ctx.f)) != readSize){
 				return IFF_STREAM_ERROR; // Cannot read
 			}
 		}else{
@@ -85,7 +87,7 @@ UWORD _parseIFFImage_callback(struct IFFstack *stack, struct IFFctx *ctx, ULONG 
 
 UWORD parseIFFImage(struct IFFgfx *iff, FILE *f)
 {
-	iff->f = f;
+	iff->ctx.f = f;
 	return parseIFF((struct IFFctx*)iff, _parseIFFImage_callback);
 }
 
@@ -396,9 +398,9 @@ struct ColorSpec* createColorMap(struct IFFctx *ctx, struct IFFChunkData *cmap, 
 			cs[i].Green = p[1] >> shift;
 			cs[i].Blue = p[2] >> shift;
 		}else{
-			cs[i].Red = p[0] << 24;
-			cs[i].Green = p[1] << 24;
-			cs[i].Blue = p[2] << 24;
+			cs[i].Red = (ULONG)p[0] << 24;
+			cs[i].Green = (ULONG)p[1] << 24;
+			cs[i].Blue = (ULONG)p[2] << 24;
 		}
 	}
 	cs[i].ColorIndex = -1; // terminate
@@ -472,7 +474,7 @@ ULONG* createColorTable(struct IFFctx *ctx, struct IFFChunkData *cmap, UBYTE min
 	return colourTable;
 }
 
-__inline UWORD setViewPortColorTable(struct IFFctx *ctx, struct ViewPort *vp, ULONG *c, UBYTE maxDepth)
+__INLINE__ UWORD setViewPortColorTable(struct IFFctx *ctx, struct ViewPort *vp, ULONG *c, UBYTE maxDepth)
 {
 	ULONG tmp = 0, colours = 0, tablecols = 0;
 	UWORD *colourTable4 = NULL;
@@ -545,7 +547,7 @@ UWORD setViewPortColorMap(struct ViewPort *vp, struct IFFctx *ctx, struct IFFChu
 	return IFF_NO_ERROR;
 }
 
-UWORD setViewPortColorSpec(struct ViewPort *vp, struct ColorSpec *cs, UBYTE maxDepth)
+UWORD setViewPortColorSpec(struct ViewPort *vp, struct IFFctx *ctx, struct ColorSpec *cs, UBYTE maxDepth)
 {
 	UWORD i=0, colours;
 	
@@ -713,7 +715,7 @@ UWORD convertPlanarTableTo24bitRender(struct IFFRenderInfo *ri, UWORD Width, UWO
 				}					
 			}
 			colOffset = (cidx * 3)+1;
-			*p++ = colourTable[colOffset] >> 24;   // Red
+			*p++ = colourTable[colOffset] >> 24;   // Redctx->gfxlib
 			*p++ = colourTable[colOffset+1] >> 24; // Green
 			*p++ = colourTable[colOffset+2] >> 24; // Blue
 		}
@@ -723,14 +725,14 @@ final:
 	return ret;
 }
 
-static void _v36FreeBitMap(struct BitMap *bmp, struct _BitmapHeader *bitmaphdr)
+static void _v36FreeBitMap(struct IFFctx *ctx, struct BitMap *bmp, struct _BitmapHeader *bitmaphdr)
 {
-	v36FreeBitMap(bmp, bitmaphdr->Width, bitmaphdr->Height);
+	v36FreeBitMap(bmp, bitmaphdr->Width, bitmaphdr->Height, ctx->gfxlib);
 }
 
-static struct BitMap* _v36AllocBitMap(struct _BitmapHeader *bitmaphdr)
+static struct BitMap* _v36AllocBitMap(struct IFFctx *ctx, struct _BitmapHeader *bitmaphdr)
 {
-	return v36AllocBitMap(bitmaphdr->Width, bitmaphdr->Height, bitmaphdr->Bitplanes+(bitmaphdr->Masking?1:0));
+	return v36AllocBitMap(bitmaphdr->Width, bitmaphdr->Height, bitmaphdr->Bitplanes+(bitmaphdr->Masking?1:0), ctx->gfxlib);
 }
 
 struct BitMap* createBitMap(struct IFFctx *ctx, struct IFFChunkData *body, struct _BitmapHeader *bitmaphdr, struct BitMap *friend)
@@ -762,7 +764,7 @@ struct BitMap* createBitMap(struct IFFctx *ctx, struct IFFChunkData *body, struc
 	if (ctx->gfxlib->lib_Version >=39){
 		bmp = AllocBitMap(bitmaphdr->Width,bitmaphdr->Height, bitmaphdr->Bitplanes + maskplanes, /*BMF_DISPLAYABLE | BMF_INTERLEAVED | */BMF_CLEAR, friend);
 	}else{
-		bmp = _v36AllocBitMap(bitmaphdr);
+		bmp = _v36AllocBitMap(ctx, bitmaphdr);
 	}
 	
 	if (bmp){
@@ -834,7 +836,7 @@ void freeBitMap(struct IFFctx *ctx, struct BitMap *bmp, struct _BitmapHeader *bi
 	if (ctx->gfxlib->lib_Version >=39){
 		FreeBitMap(bmp);
 	}else{
-		_v36FreeBitMap(bmp,bitmaphdr);
+		_v36FreeBitMap(ctx,bmp,bitmaphdr);
 	}
 }
 
@@ -901,7 +903,7 @@ void deleteIFFNode(struct IFFnode *n)
 }
 
 // returns the length including pad bytes
-ULONG _calcNodeSize(struct IFFnode *n)
+static ULONG _calcNodeSize(struct IFFnode *n)
 {
 	ULONG pos = 0, len =0;
 			
@@ -937,7 +939,7 @@ ULONG _calcNodeSize(struct IFFnode *n)
 	return len;
 }
 
-UWORD _copyStreamData(FILE *to, FILE *from, ULONG len)
+static UWORD _copyStreamData(FILE *to, FILE *from, ULONG len)
 {
 	ULONG amount = 0, whence = 0, readwrite = 0;
 	UBYTE cpyBuf[1024];
@@ -963,7 +965,7 @@ UWORD _copyStreamData(FILE *to, FILE *from, ULONG len)
 	return IFF_NO_ERROR;
 }
 
-UWORD _writeIFF(FILE *f, struct IFFnode *n)
+static UWORD _writeIFF(FILE *f, struct IFFnode *n)
 {
 	UWORD ret = IFF_NO_ERROR;
 	UWORD bytesWritten = 0;
@@ -1045,7 +1047,7 @@ UWORD createIFF(FILE *f, struct IFFnode *root)
 	return _writeIFF(f, root);
 }
 
-__inline void freeColourTable(ULONG *colourTable)
+__INLINE__ void freeColourTable(ULONG *colourTable)
 {
 	FreeVec(colourTable);
 }

@@ -9,6 +9,7 @@
 #include <proto/graphics.h>
 #include <graphics/view.h>
 #include <intuition/intuition.h>
+#include "compatibility.h"
 
 #define IFF_NO_ERROR			0
 #define IFF_STREAM_ERROR		1
@@ -155,7 +156,7 @@ void freeColourTable(ULONG *colourTable);
 UWORD setViewPortColorMap(struct ViewPort *vp, struct IFFctx *ctx, struct IFFChunkData *cmap, UBYTE maxDepth);
 
 // Function to alternatively set a colour map using a colour spec
-UWORD setViewPortColorSpec(struct ViewPort *vp, struct ColorSpec *cs, UBYTE maxDepth);
+UWORD setViewPortColorSpec(struct ViewPort *vp, struct IFFctx *ctx, struct ColorSpec *cs, UBYTE maxDepth);
 
 // Create a colour spec from an IFF colour map. 
 struct ColorSpec* createColorMap(struct IFFctx *ctx, struct IFFChunkData *cmap, UBYTE bitspergun);

@@ -1,0 +1,43 @@
+#   Copyright 2026 Aidan Holmes
+#   Amiga UI wrapper for GadTools
+# 	Makefile for ui.lib and test application. This uses make to build for VBCC
+VCROOTBIN = $(VBCC)/bin
+CC = $(VCROOTBIN)/vc
+VASM = $(VCROOTBIN)/vasmm68k_mot
+SCOPTS = +aos68k -lamiga -O2 -I/opt/amiga/NDK3.2/Include_H
+CFLAGS = $(SCOPTS) -I$(VBCC)/targets/m68k-amigaos/include -I../../CGraphX/C/Include -static -v
+
+SRC = ../Src
+BIN = Bin
+OBJ = Objs
+LINKLIBNAME = ui
+LIBNAME = $(LINKLIBNAME).lib
+
+OBJS= $(OBJ)/app.o $(OBJ)/listgad.o $(OBJ)/stringgad.o $(OBJ)/txtgad.o $(OBJ)/iff.o $(OBJ)/numgad.o $(OBJ)/intgad.o $(OBJ)/gfx.o
+OBJSTest = $(OBJ)/main.o
+OBJSImageTest = $(OBJ)/imagetest.o
+ALLOBJS = $(OBJS) $(OBJSTest) $(OBJSImageTest)
+
+.PHONY: all dirs clean
+
+all: dirs $(BIN)/$(LIBNAME) $(BIN)/Test $(BIN)/ImageTest
+
+dirs:
+	mkdir -p $(BIN)
+	mkdir -p $(OBJ)
+
+clean:
+	rm -f $(OBJ)/*.o $(OBJ)/*.asm $(BIN)/*.lnk $(BIN)/*.info $(BIN)/*.map $(BIN)/*.gst $(BIN)/$(LIBNAME) $(BIN)/Test $(BIN)/ImageTest
+
+$(BIN)/Test: $(BIN)/$(LIBNAME) $(OBJSTest)
+	$(CC) $(CFLAGS) -o $@ $(OBJSTest) -L$(BIN) -l$(LINKLIBNAME)
+	
+$(BIN)/ImageTest: $(BIN)/$(LIBNAME) $(OBJSImageTest)
+	$(CC) $(CFLAGS) -o $@ $(OBJSImageTest) -L$(BIN) -l$(LINKLIBNAME)
+
+$(BIN)/$(LIBNAME): $(OBJS)
+	cat $(OBJS) > $(BIN)/$(LIBNAME)
+#	ar rc $(BIN)/$(LIBNAME) $(OBJS)
+
+$(ALLOBJS): $(OBJ)/%.o: $(SRC)/%.c
+	$(CC) $(CFLAGS) -c $^ -o $@

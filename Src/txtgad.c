@@ -17,8 +17,9 @@ UBYTE *getTextValue(AppGadget g)
 
 void setTextValue(AppGadget g, UBYTE *szStr)
 {
-
+	struct Library *GadToolsBase = NULL ;
 	if (g.wnd){
+		GadToolsBase = g.wnd->app->gadtools;
 		GT_SetGadgetAttrs(g.gadget, g.wnd->appWindow, NULL, GTTX_Text, (ULONG)szStr, TAG_END);
     }
 }

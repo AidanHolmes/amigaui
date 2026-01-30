@@ -1,4 +1,4 @@
-//   Copyright 2024 Aidan Holmes
+//   Copyright 2024-2026 Aidan Holmes
 //   Example using the IFF parser and image rendering
 
 #include "iff.h"
@@ -19,7 +19,6 @@ int main(int argc, char **argv)
 {
 	App myApp ;
 	Wnd *appWnd;
-	//Wnd *appWnd;
 	FILE *f = NULL;
 	struct IFFgfx gfx;
 	UWORD ret = IFF_NO_ERROR;
@@ -34,6 +33,7 @@ int main(int argc, char **argv)
 	struct Library		*CyberGfxBase;
 	struct IFFRenderInfo ri;
 	struct IFFChunkData cmap, body;
+	struct Library *GfxBase = NULL;
 	
 	if (argc < 2){
 		printf("Please provide an image file name\n");
@@ -53,13 +53,15 @@ int main(int argc, char **argv)
 	
 	initialiseApp(&myApp);
 	
+	GfxBase = myApp.gfx;
+	
 	myApp.wake_sigs = SIGBREAKF_CTRL_C;
 	myApp.fn_wakeSigs = window_sigs;
 	
 	if ((ret=parseIFFImage(&gfx, f)) != IFF_NO_ERROR){
 		printf("Failed to parse file stream, error %u\n", ret);
 	}else{
-		printf("IFF structure size %u\n", gfx.size) ;
+		printf("IFF structure size %u\n", gfx.ctx.size) ;
 		printf("Image width %u, height %u\n", gfx.bitmaphdr.Width,gfx.bitmaphdr.Height);
 		printf("Image depth %u, masking 0x%02X, compression 0x%02X\n", gfx.bitmaphdr.Bitplanes, gfx.bitmaphdr.Masking, gfx.bitmaphdr.Compress);
 		printf("CAMG flags 0x%04X\n", gfx.camg_flags);
