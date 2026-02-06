@@ -20,11 +20,14 @@
 #define CyberGfxBase myApp->cgfx
 #define UtilityBase myApp->util
 
-//#define MIN_IDCMP (IDCMP_GADGETUP | IDCMP_NEWSIZE | IDCMP_ACTIVEWINDOW | IDCMP_INACTIVEWINDOW | IDCMP_CHANGEWINDOW | IDCMP_CLOSEWINDOW | LISTVIEWIDCMP | TEXTIDCMP)
 #define MIN_IDCMP (IDCMP_GADGETUP | IDCMP_NEWSIZE | IDCMP_ACTIVEWINDOW | IDCMP_INACTIVEWINDOW | IDCMP_CHANGEWINDOW | IDCMP_CLOSEWINDOW | IDCMP_MENUPICK)
 
 Wnd* _findAppWndR(Wnd *fromWnd, struct Window *find, UBYTE *strfind);
 
+static struct TextAttr def_topaz8 = {
+	   (STRPTR)"topaz.font", 8, 0, 1
+	};
+	
 static void _showErrorRequester(App *myApp, char *Text, char *Button) 
 {
 	struct EasyStruct Req;
@@ -299,6 +302,9 @@ void appCleanUp(App *myApp)
 		FreeVisualInfo(myApp->visual);
 		myApp->visual = NULL ;
 	}
+	if (myApp->screenDrawInfo){
+		FreeScreenDrawInfo(myApp->appScreen, myApp->screenDrawInfo);
+	}
 	if (myApp->appScreen){
 		if (!myApp->customscreen){
 			UnlockPubScreen(NULL, myApp->appScreen); // should be unlocked after first openwindow call
@@ -342,7 +348,7 @@ void appCleanUp(App *myApp)
 }
 
 int initialiseWnd(App *myApp, Wnd *myWnd, UBYTE *wndTitle)
-{
+{	
 	myWnd->_n.ln_Name = NULL ;
 	myWnd->app = myApp ;
 	myWnd->lastModal = NULL ;
@@ -376,12 +382,45 @@ int initialiseWnd(App *myApp, Wnd *myWnd, UBYTE *wndTitle)
 	_reset_list(&myWnd->childWnd);
 	
 	/* Create the gadget list */
-	if (!(myWnd->gtail = CreateContext(&(myWnd->info.FirstGadget)))) {
+	if (!(myWnd->gtail = CreateContext(&myWnd->info.FirstGadget))) {
 		_showErrorRequester(myApp, "Failed to create gadtools context", "Exit");
 		return 5;
 	}
 	
 	return 0 ;
+}
+
+struct Screen* getAppScreen(App *myApp)
+{
+	struct Screen *screen = LockPubScreen(NULL);
+	if (screen) {
+		myApp->appScreen = screen;
+		UnlockPubScreen(NULL,myApp->appScreen);
+	}
+	return myApp->appScreen ; // Could be old if LockPubScreen failed
+}
+
+struct DrawInfo* getScreenDrawInfo(App *myApp)
+{
+	struct Screen *screen = NULL;
+	
+	if (myApp->customscreen){
+		screen = myApp->appScreen;
+	}else{
+		screen = LockPubScreen(NULL);
+	}
+	if (screen) {
+		myApp->appScreen = screen;
+		if (myApp->screenDrawInfo){
+			FreeScreenDrawInfo(myApp->appScreen, myApp->screenDrawInfo);
+			myApp->screenDrawInfo = NULL ;
+		}
+		myApp->screenDrawInfo = GetScreenDrawInfo(myApp->appScreen);
+		if (!myApp->customscreen){
+			UnlockPubScreen(NULL,myApp->appScreen);
+		}
+	}
+	return myApp->screenDrawInfo;
 }
 
 int openAppWindow(Wnd *myWnd, ULONG *tags)
@@ -570,20 +609,43 @@ Wnd* addChildWnd(Wnd *wnd, UBYTE *name, UBYTE *title)
 	return new;
 }
 
+void initAppGadget(AppGadget *gad, ULONG type, WORD x, WORD y, WORD w, WORD h, char *txt, struct TextAttr* txtAt, UWORD id, ULONG flags)
+{	
+	memset(gad, 0, sizeof(AppGadget));
+	gad->gadgetkind = type ;
+	gad->def.ng_LeftEdge = x;
+	gad->def.ng_TopEdge = y;
+	gad->def.ng_Width = w;
+	gad->def.ng_Height = h;
+	gad->def.ng_GadgetText = (UBYTE*)txt;
+	if (!txtAt){
+		txtAt = &def_topaz8;
+	}
+	gad->def.ng_TextAttr = txtAt;
+	gad->def.ng_GadgetID = id;
+	gad->def.ng_Flags = flags;
+}
+
 struct Gadget* addAppGadget(Wnd *myWnd, AppGadget *gad)
 {
 	App *myApp = myWnd->app;
 	
     gad->def.ng_VisualInfo = myWnd->app->visual;
-    gad->gadget = CreateGadgetA(gad->gadgetkind, myWnd->gtail, &(gad->def), gad->gadgetTags);
+	if (gad->def.ng_UserData){ // it's a bit crap, but use the UserData field to identify first time setup (usually set to null in code)
+		// Already exists
+		AddGadget(myWnd->appWindow, gad->gadget, 0xFFFF);
+	}else{
+		gad->gadget = CreateGadgetA(gad->gadgetkind, myWnd->gtail, &(gad->def), gad->gadgetTags);
+		gad->oldRenderer = NULL ;
+		gad->fn_gadgetUp = NULL;
+	}
     if (!gad->gadget){
         return NULL;
     }
 	
     myWnd->gtail = gad->gadget;
     // Associate the gadget to the AppGadget
-    gad->gadget->UserData = gad;
-    gad->fn_gadgetUp = NULL;
+    gad->def.ng_UserData = gad->gadget->UserData = gad;
     gad->wnd = myWnd ;
 	if (myWnd->appWindow){ 
 		// Already has an active window open
@@ -593,17 +655,101 @@ struct Gadget* addAppGadget(Wnd *myWnd, AppGadget *gad)
     return gad->gadget;
 }
 
-void delAppGadget(AppGadget *gad)
+BOOL setCustomBorder(AppGadget *gad, struct Border *b)
 {
 	App *myApp = NULL;
 	
-	if (gad->wnd && gad->wnd->appWindow){
+	if (!gad->def.ng_UserData | !gad->gadget | !gad->wnd | !gad->wnd->appWindow){
+		return FALSE ; // the gadget needs a call to addAppGadget to create it properly
+	}
+	
+	myApp = gad->wnd->app;
+	
+	if (!gad->oldRenderer){
+		gad->oldRenderer = gad->gadget->GadgetRender ; // Need to remember the original renderer to restore on closure
+	}
+	gad->gadget->Flags &= ~GFLG_GADGIMAGE; // Clear GFLG_GADGIMAGE from gadget 
+	gad->gadget->GadgetRender = gad->gadget->SelectRender = b;
+	if (gad->wnd->appWindow){ // Refresh to show new border image
+		// Already has an active window open
+		RefreshGadgets(gad->wnd->info.FirstGadget, gad->wnd->appWindow, NULL);
+		GT_RefreshWindow(gad->wnd->appWindow, NULL); // Update gadtools in window
+	}	
+	return TRUE ;
+}
+
+static struct Gadget* getLastGadget(struct Gadget *first)
+{
+	struct Gadget *g;
+	if (!first){
+		return NULL;
+	}
+	for (g=first; g->NextGadget; g = g->NextGadget);
+	return g;
+}
+
+void removeAppGadget(AppGadget *gad)
+{
+	App *myApp = NULL;
+	BOOL setTail = FALSE ;
+	
+	if (gad->gadget && gad->wnd && gad->wnd->appWindow){
 		myApp = gad->wnd->app;
+		if (!gad->gadget->NextGadget){
+			setTail = TRUE ;
+		}
 		RemoveGadget(gad->wnd->appWindow, gad->gadget);
-		//FreeGadgets(gad->gadget);
-		gad->gadget = NULL ;
+		if (setTail){
+			gad->wnd->gtail = getLastGadget(gad->wnd->info.FirstGadget) ; // search gadget list for tail
+			gad->gadget->NextGadget = NULL ;
+		}
+
 		RefreshGList(gad->wnd->info.FirstGadget, gad->wnd->appWindow, NULL, -1);
 		GT_RefreshWindow(gad->wnd->appWindow, NULL); // Update gadtools in window
+	}
+}
+
+void refreshAppGadget(AppGadget *gad)
+{
+	App *myApp = NULL;
+	if (gad->gadget && gad->wnd && gad->wnd->appWindow){
+		myApp = gad->wnd->app;
+		RefreshGList(gad->gadget, gad->wnd->appWindow, NULL, 1);
+	}
+}
+
+static void _customGadgetCleanup(struct Gadget *FirstGadget)
+{
+	struct Gadget *g;
+	AppGadget *tmpg;
+	
+	if (!FirstGadget){return;}
+	// Custom drawing will need clean up before gadget is freed
+	for (g = FirstGadget; g; g = g->NextGadget){
+		tmpg = (AppGadget*)g->UserData;
+		if (tmpg){
+			if (tmpg->oldRenderer){
+				g->GadgetRender = tmpg->oldRenderer;
+				g->SelectRender = tmpg->oldRenderer;
+				tmpg->oldRenderer = NULL;
+			}
+		}
+	}
+}
+
+void deleteAppGadget(AppGadget *gad)
+{
+	App *myApp = NULL;
+	
+	if (gad->wnd){
+		myApp = gad->wnd->app;
+		// Remove from lists and window references
+		removeAppGadget(gad);
+		_customGadgetCleanup(gad->gadget);
+		FreeGadgets(gad->gadget);
+		gad->gadget = NULL;
+		gad->oldRenderer = NULL;
+		gad->def.ng_UserData = NULL ; // must clear this as it's used to identify gadgets to be created
 	}
 }
 
@@ -621,6 +767,7 @@ void setGadgetTags(AppGadget *g, ULONG *tags)
 void wndCleanUp(Wnd *myWnd)
 {
 	struct Node *n = NULL ;
+	struct Gadget *gadgetWndList = NULL ;
 	App *myApp = myWnd->app;
 	
 	if (!IsListEmpty(&myWnd->childWnd)){
@@ -630,23 +777,24 @@ void wndCleanUp(Wnd *myWnd)
 			FreeVec(n) ;
 		}
 	}
-	
-	closeAppWindow(myWnd);
-	
-	if (myWnd->_n.ln_Name){
-		FreeVec(myWnd->_n.ln_Name);
-	}
-    /* Free gadgets */
-    if (myWnd->info.FirstGadget){
-		FreeGadgets(myWnd->info.FirstGadget);
-		myWnd->info.FirstGadget = NULL ;
-	}
-	
 	if (myWnd->menu){
 		ClearMenuStrip(myWnd->appWindow);
 		FreeMenus(myWnd->menu);
 		myWnd->menu = NULL;
 	}
+
+	closeAppWindow(myWnd);
+	
+	/* Free gadgets */
+    if (myWnd->info.FirstGadget){
+		_customGadgetCleanup(myWnd->info.FirstGadget);
+		FreeGadgets(myWnd->info.FirstGadget);
+	}
+	if (myWnd->_n.ln_Name){
+		FreeVec(myWnd->_n.ln_Name);
+		myWnd->_n.ln_Name = NULL;
+	}
+    
 }
 
 Wnd* _findAppWndR(Wnd *fromWnd, struct Window *find, UBYTE *strfind)

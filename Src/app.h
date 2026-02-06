@@ -14,6 +14,10 @@
 #define GFX_IS_ECS  0x0002
 #define GFX_IS_AGA	0x0003
 
+
+#define INIT_APPGADGET(name,type,x,y,w,h,txt,font,id,flags) \
+	AppGadget name = {type,{x,y,w,h,(UBYTE*)#txt,font,id,flags,NULL,NULL},NULL,NULL,NULL,NULL,NULL,NULL}
+
 struct AppGadget;
 struct App;
 struct Wnd;
@@ -36,7 +40,6 @@ typedef struct Wnd {
 	ULONG idcmp ;
 	struct NewWindow info;
 	struct Window *appWindow;
-    //struct Gadget *glist;
     struct Gadget *gtail;
 	struct List childWnd;
 	struct Wnd *lastModal;
@@ -48,8 +51,9 @@ typedef struct Wnd {
 
 typedef struct App {
 	struct NewScreen screeninfo;
-    struct Screen *appScreen;
+    struct Screen *appScreen; // suggest calling getAppScreen instead of this directly. It will be old info
 	struct MsgPort *msgPort;
+	struct DrawInfo *screenDrawInfo; // use function to get this data (will be NULL if accessed directly)
     APTR visual;
 	BOOL customscreen;
 	struct Wnd mainWnd;
@@ -77,6 +81,7 @@ typedef struct AppGadget {
     struct Gadget *gadget;
     Wnd *wnd;
     void *data;
+	APTR oldRenderer;
     callbackGadgetup fn_gadgetUp; // IDCM_GADGETUP
 	
 } AppGadget;
@@ -103,12 +108,30 @@ int initialiseApp(App *myApp);
 // If this fails then do not continue with application!
 int createAppScreen(App *myApp, BOOL hires, BOOL laced, ULONG *tags);
 
-// Adds a new app gadget to the window. This will reset all callbacks so only change these after this call
+// Create a clear and ready to use AppGadget. This can be used or the macro INIT_APPGADGET.
+// If you don't set txtAt to any font then a default topaz font will be specified.
+void initAppGadget(AppGadget *gad, ULONG type, WORD x, WORD y, WORD w, WORD h, char *txt, struct TextAttr* txtAt, UWORD id, ULONG flags);
+
+// Just refresh this gadget
+void refreshAppGadget(AppGadget *gad);
+
+// Creates and adds a new app gadget to the window. This will reset all callbacks so only change these after this call
 // Returns NULL if failed
 struct Gadget* addAppGadget(Wnd *myWnd, AppGadget *gad);
 
-// Remove a gadget from the window. Note that you will need to call addAppGadget again to insert.
-void delAppGadget(AppGadget *gad);
+// Remove a gadget from the window. Note that you will need to call addAppGadget again to reinsert.
+// This doesn't delete and free the gadget
+void removeAppGadget(AppGadget *gad);
+
+// Delete and free resources for the appgadget. A new call to addAppGadget must be made to 
+// recreate resources. All definitions are retained in the delete process so shouldn't need a new initAppGadget call.
+// Any custom drawing routines will need reapplying after addAppGadget is called again. 
+void deleteAppGadget(AppGadget *gad);
+
+// Add a custom border render for a gadget. This manages the gadget to disable image processing
+// and ensures clean deletion of gadget when app closes.
+// Allocated Border objects will need to be managed by the caller and resources freed.
+BOOL setCustomBorder(AppGadget *gad, struct Border *b);
 
 // Set a tag list for the gadget. This only sets the initial gadget list before calling addAppGadget.
 // This function will change the tags before or after calling openAppWindow.
@@ -181,5 +204,11 @@ BOOL createMenu(Wnd *wnd, struct NewMenu *newm);
 // by a timeout.
 void setWakeTimer(App *myApp, ULONG secs, ULONG micros);
 
+// Obtains a drawinfo struct regarding the current screen.
+// You do not need to free this struct, it will be managed by the App
+struct DrawInfo* getScreenDrawInfo(App *myApp);
+
+// Safer way to get the screen. Will lock and obtain the latest screen info and then unlock again.
+struct Screen* getAppScreen(App *myApp);
 
 #endif

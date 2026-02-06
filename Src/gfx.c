@@ -278,3 +278,314 @@ cleanup:
 	}
 	return NULL;
 }
+
+// Load an XBM style image and set the 2 colours
+// A new PixelImage will be created, this must be freed with freePixelImage when finished using.
+struct PixelImage* xbmToPixelImage(UBYTE *xbm, UWORD width, UWORD height, UBYTE colour0, UBYTE colour1)
+{
+	struct PixelImage *pixImg;
+	UBYTE *row = NULL, *p = NULL, *q = NULL;
+	UWORD xbmstride = 0;
+	UWORD x=0, y=0;
+
+	// depth now specifies the number of bits required to store colours - up to 8 bits (ignore more pens after this)
+	xbmstride = (width+7) / 8 ; // byte align XBM
+	
+	if (!(pixImg = AllocVec(sizeof(struct PixelImage), MEMF_ANY | MEMF_CLEAR))){
+		return NULL; // no memory
+	}
+	if (!(pixImg->pens = AllocVec(sizeof(LONG)*2, MEMF_ANY))){
+		FreeVec(pixImg);
+		return NULL; // no memory
+	}
+	pixImg->pens[0] = colour0;
+	pixImg->pens[1] = colour1;
+	pixImg->pencount = 2;
+	pixImg->width = width;
+	pixImg->height = height;
+	pixImg->stride = (((width+15)>>4)<<4); // Align to WORD
+	if (!(pixImg->pixelArray=AllocVec((pixImg->stride * height), MEMF_ANY | MEMF_CLEAR))){
+		// Failed to allocate memory
+		FreeVec(pixImg->pens);
+		FreeVec(pixImg);
+		return NULL;
+	}
+	for (y=0,row=pixImg->pixelArray; y < height; y++, row+=pixImg->stride){
+		p=row; // p points to start of new image row
+		q = xbm + (xbmstride*y); // q points to start of xmb image row
+		
+		for (x=0;x<width;x++){ // iterate the new image column pixels
+			if (q[x>>3] & (1 << (x&0x07))){
+				*p++ = pixImg->pens[1];
+			}else{
+				*p++ = pixImg->pens[0];
+			}
+		}
+	}
+	return pixImg;
+}
+
+static LONG ASCII_To_Long(char *szNum)
+{
+	LONG num=0;
+	BOOL neg = FALSE, reading =FALSE;
+	char *p = szNum;
+	for (;*p;p++){
+		switch(*p){
+			case ' ':case '\t':case '\n':case '\r':
+				//ignore at start of parse
+				if (reading){
+					goto exit ; // white space indicates end of number
+				}
+				break;
+			case '-':
+				neg = TRUE;
+				reading = TRUE ;
+				break;
+			default:
+				if (*p >= '0' && *p <= '9'){
+					reading = TRUE ;
+					num *= 10;
+					num += *p - '0';
+				}else{
+					if (reading){
+						goto exit; // unexpected char, exit
+					}
+				}
+		}
+	}
+
+exit:
+	if (neg){
+		num *= -1;
+	}
+	return num;
+}
+
+static BOOL _parseXPMAttribs(UBYTE **xpm, struct PixelImage *pi)
+{
+	char *p = NULL, *q = NULL ;
+	LONG tmp = 0;
+	BOOL spc = FALSE ;
+	UBYTE parsingparam = 0;
+	// Parse image parameters
+	for (p=xpm[0]; *p != '\0';){
+		spc = FALSE;
+		for (q=p; *p; p++){
+			if (*p == ' '){
+				spc = TRUE;
+				break;
+			}
+		}
+		if (p > q){
+			tmp =ASCII_To_Long(q);
+			if (tmp <=0){
+				return FALSE;
+			}
+			switch(parsingparam++){
+				case 0:pi->width = (UWORD)tmp;break;
+				case 1:pi->height = (UWORD)tmp;break;
+				case 2:pi->pencount = (UBYTE)tmp;break;
+				case 3:pi->charspercolour = (UBYTE)tmp;break;
+				default:
+					break;
+			}
+		}
+		if (spc){
+			*p++ = ' ' ; // restore space char
+			q = p;
+		}
+	}
+}
+
+static BOOL _parseXPMColours(UBYTE **xpm, struct PixelImage *pi, struct ColorMap *cm)
+{
+	char *p = NULL, spec = 'c', *cid = NULL ; // generous support for 5 chars per colour (which is more than the 3 really needed)
+	UBYTE ci = 0, idi=0, idc=0, parsingparam = 0, hexcount = 0;
+	ULONG colour = 0;
+	BOOL ret = FALSE;
+	struct Library *GfxBase = NULL ;
+		
+	if (!(GfxBase = OpenLibrary("graphic.library", 0))){
+		return FALSE;
+	}
+	
+	if (pi->pencount == 0 || pi->charspercolour == 0 || pi->charspercolour > 5){
+		return FALSE ; // nonsense parameters or cannot support
+	}
+	
+	//pi->colourIDs[pi->charspercolour] = '\0'; // add terminator at fixed length
+	
+	for (ci=0;ci < pi->pencount; ci++){
+		idi = 0;
+		idc = 0;
+		colour = 0;
+		hexcount = 0;
+		cid = pi->colourIDs+(ci*pi->charspercolour+1);
+		cid[pi->charspercolour] = '\0'; // Terminate ID
+		for (p = xpm[ci+1]; *p; p++){
+			switch(*p){
+				case ' ': case '\t': case '\n': case '\r': 
+					if (idi > 0){ // started reading the identifier for colour, move to next param with whitespace
+						parsingparam++;
+					}
+					break;
+				default:
+					// Any non-ws chars
+					if (parsingparam == 0){ // Read the colour identifier
+						if (idi < pi->charspercolour){
+							cid[idi++] = *p;
+						}
+					}else if(parsingparam == 1){ // Read the colour spec
+						spec = *p ;
+					}else if(parsingparam == 2){ // Read the start of colour token
+						if (*p == '#'){
+							parsingparam++;
+						}
+					}else if(parsingparam == 3){ // Get the colour
+						colour *= 16;
+						if (*p >= '0' && *p <= '9'){
+							colour += *p - '0';
+						}else if (*p >= 'a' && *p <= 'f'){
+							colour += *p - 'a' + 10;
+						}else if (*p >= 'A' && *p <= 'F'){
+							colour += *p - 'A' + 10;
+						}else{
+							goto exit; // garbage
+						}
+						hexcount++;
+					}
+			}
+		}
+		if (hexcount < 8){
+			// Shift to align correctly (for instance; alpha byte missing)
+			colour = colour << ((8-hexcount) * 4);
+		}
+		// Record the colour in the PixelImage
+		pi->colourTable[ci] = colour ;
+		// Assign pen for colour
+		if (cm){
+			pi->pens[ci] = ObtainBestPen(cm, (colour << 0) | 0x00FFFFFF, (colour << 8) | 0x00FFFFFF, (colour << 16) | 0x00FFFFFF, OBP_Precision, PRECISION_EXACT, 0);
+		}
+	}
+	
+	ret = TRUE ;
+exit:
+	CloseLibrary(GfxBase);
+	return TRUE ;
+}
+
+// Update the image with new pens (redefine in PixelImage->pens array)
+// This will rewrite the pixel array, retaining the same width and height of the image. Only colours are changed in the process
+BOOL xpmUpdateColours(struct PixelImage *pi, UBYTE **xpm)
+{
+	UBYTE *row = NULL, *p = NULL, *q = NULL, writePen = 0;
+	UWORD x=0, y=0, ci = 0, col = 0;
+	
+	for (y=0,row=pi->pixelArray; y < pi->height; y++, row+=pi->stride){
+		p=row; // p points to start of new image row
+		q = xpm[pi->pencount+1+y]; // q points to start of xmb image row (these appear after params and all colour strings)
+		
+		for (x=0;x<pi->width;x++){ // iterate the new image column pixels
+			writePen = 0;
+			for(col=0; col < pi->pencount; col++){ // search for pen associated with colour id
+				for(ci = 0;ci < pi->charspercolour; ci++){
+					if (pi->colourIDs[((pi->charspercolour+1)*col)+ci] != q[ci]){
+						break;
+					}
+				}
+				if (ci == pi->pencount){ // found a pen
+					writePen = pi->pens[col];
+					break ; // done, exit search
+				}
+			}
+			q += pi->charspercolour; // jump to next colour ID
+			*p++ = writePen ; // write pen ID into byte and move to next pixel in array
+		}
+	}
+	
+	return TRUE ;
+}
+
+// Convert an xpm header structure to a pixel image for use with WritePixelArray8
+// Colours are assigned automatically from the colour definition in the xpm. This may be approximate if no free colours
+// May fail if memory cannot be allocated or failure to parse the image from header data. Assumes well defined image
+// NOTE AN EXCEPTION - this only supports #RRGGBBAA or #RRGGBB colours and not named colours!
+struct PixelImage* xpmToPixelImage(UBYTE **xpm, struct ColorMap *cm)
+{
+	struct PixelImage *pixImg;
+	BOOL ret = FALSE;
+	
+	// Create the holding structure for the new image. 
+	if (!(pixImg = AllocVec(sizeof(struct PixelImage), MEMF_ANY | MEMF_CLEAR))){
+		goto exit; // no memory
+	}
+	
+	// Read the initial attributes of the image into PixelImage struct. 
+	if (!_parseXPMAttribs(xpm, pixImg)){
+		goto exit;
+	}
+	
+	// Allocate an array of pens which holds the Workbench allocated pen for each colour of the image. 
+	if (!(pixImg->pens = AllocVec(sizeof(LONG)*pixImg->pencount, MEMF_ANY))){
+		goto exit; // no memory
+	}
+	
+	// Allocate list of pen identifers from the XPM colour table. This is only useful for processing colour information 
+	// and allocating the initial pens. 
+	if (!(pixImg->colourIDs = AllocVec((pixImg->charspercolour+1)*pixImg->pencount, MEMF_ANY | MEMF_CLEAR))){
+		goto exit; // no memory
+	}
+	
+	if (!(pixImg->colourTable = AllocVec(sizeof(ULONG)*pixImg->pencount, MEMF_ANY | MEMF_CLEAR))){
+		goto exit; // no memory
+	}
+	
+	// Read colours from the XPM colour array. Allocate pens using best or closest match of colours. 
+	if (!_parseXPMColours(xpm, pixImg, cm)){
+		goto exit;
+	}
+	
+	// Allocate the pixel array
+	pixImg->stride = (((pixImg->width+15)>>4)<<4); // Align to WORD
+	if (!(pixImg->pixelArray=AllocVec((pixImg->stride * pixImg->height), MEMF_ANY | MEMF_CLEAR))){
+		// Failed to allocate memory
+		goto exit;
+	}
+	
+	// Use the parsed and allocated colours to create the pixel array image
+	if (!xpmUpdateColours(pixImg, xpm)){
+		goto exit;
+	}
+	
+	ret = TRUE ; // success
+exit:
+	if (!ret){
+		freePixelImage(pixImg);
+		pixImg = NULL;
+	}
+	return pixImg;
+}
+
+void freePixelImage(struct PixelImage *pi)
+{
+	if (pi){
+		if (pi->pixelArray){
+			FreeVec(pi->pixelArray);
+			pi->pixelArray = NULL;
+		}
+		if (pi->pens){
+			FreeVec(pi->pens);
+			pi->pens = NULL;
+		}
+		if (pi->colourIDs){
+			FreeVec(pi->colourIDs);
+			pi->colourIDs = NULL;
+		}
+		if (pi->colourTable){
+			FreeVec(pi->colourTable);
+			pi->colourTable = NULL;
+		}
+		FreeVec(pi);
+	}
+}
