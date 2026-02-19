@@ -17,7 +17,9 @@ LONG getIntegerValue(AppGadget g)
 
 void setIntegerValue(AppGadget g, LONG num)
 {
+	struct Library *GadToolsBase = NULL ;
 	if (g.wnd){
+		GadToolsBase = g.wnd->app->gadtools;
 		GT_SetGadgetAttrs(g.gadget, g.wnd->appWindow, NULL, GTIN_Number, (ULONG)num, TAG_END);
     }
 }
