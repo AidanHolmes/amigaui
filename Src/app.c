@@ -14,13 +14,15 @@
 #include <proto/utility.h>
 
 #define AslBase myApp->asl
-#define GfxBase myApp->gfx
+//#define GfxBase myApp->gfx
 #define IntuitionBase myApp->intu
 #define GadToolsBase myApp->gadtools
 #define CyberGfxBase myApp->cgfx
 #define UtilityBase myApp->util
 
 #define MIN_IDCMP (IDCMP_GADGETUP | IDCMP_NEWSIZE | IDCMP_ACTIVEWINDOW | IDCMP_INACTIVEWINDOW | IDCMP_CHANGEWINDOW | IDCMP_CLOSEWINDOW | IDCMP_MENUPICK)
+
+extern struct GfxBase *GfxBase;
 
 Wnd* _findAppWndR(Wnd *fromWnd, struct Window *find, UBYTE *strfind);
 
@@ -108,7 +110,7 @@ ULONG getScreenWidth(App *myApp)
 	if (!myApp || !myApp->appScreen){
 		return 0;
 	}
-	if (GfxBase->lib_Version >= 39){
+	if (GfxBase->LibNode.lib_Version >= 39){
 		return GetBitMapAttr(myApp->appScreen->RastPort.BitMap,BMA_WIDTH);
 	}
 	return myApp->appScreen->Width;
@@ -119,7 +121,7 @@ ULONG getScreenHeight(App *myApp)
 	if (!myApp || !myApp->appScreen){
 		return 0;
 	}
-	if (GfxBase->lib_Version >= 39){
+	if (GfxBase->LibNode.lib_Version >= 39){
 		return GetBitMapAttr(myApp->appScreen->RastPort.BitMap,BMA_HEIGHT);
 	}
 	return myApp->appScreen->Height;
@@ -130,7 +132,7 @@ ULONG getScreenDepth(App *myApp)
 	if (!myApp || !myApp->appScreen){
 		return 0;
 	}
-	if (GfxBase->lib_Version >= 39){
+	if (GfxBase->LibNode.lib_Version >= 39){
 		return GetBitMapAttr(myApp->appScreen->RastPort.BitMap,BMA_DEPTH);
 	}
 	return myApp->appScreen->RastPort.BitMap->Depth;
@@ -197,7 +199,7 @@ int createAppScreen(App *myApp, BOOL hires, BOOL laced, ULONG *tags)
 		_showErrorRequester(myApp, "Failed to get visual info", "Exit");
 		return(5);
 	}
-	if (GfxBase->lib_Version >= 39){
+	if (GfxBase->LibNode.lib_Version >= 39){
 		if ((GetBitMapAttr(myApp->appScreen->RastPort.BitMap,BMA_FLAGS) & BMF_STANDARD) == 0){
 			myApp->isScreenRTG = TRUE ; // it's a guess as this actually means that the screen is not in chip memory
 		}
@@ -243,6 +245,7 @@ int initialiseApp(App *myApp)
 		_showErrorRequester(myApp, "Failed to open graphics library", "Exit");
 		goto exit;
 	}
+	GfxBase = (struct GfxBase *)myApp->gfx ;
 	
     /* Lock screen and get visual info for gadtools */
 	if (myApp->appScreen = LockPubScreen(NULL)) {
@@ -250,7 +253,7 @@ int initialiseApp(App *myApp)
 			_showErrorRequester(myApp, "Failed to get visual info", "Exit");
 			goto exit;
 		}
-		if (GfxBase->lib_Version >= 39){
+		if (GfxBase->LibNode.lib_Version >= 39){
 			if ((GetBitMapAttr(myApp->appScreen->RastPort.BitMap,BMA_FLAGS) & BMF_STANDARD) == 0){
 				myApp->isScreenRTG = TRUE ; // it's a guess as this actually means that the screen is not in chip memory
 			}

@@ -28,14 +28,13 @@ void cleanupGelSys(Wnd *pWnd);
 struct GfxBobs *createBob(Wnd *pWnd, struct GfxGelSys *sys, struct VSprite *vs, UWORD screenDepth, BOOL dblBuffer);
 void removeBobs(Wnd *pWnd, struct GfxGelSys *sys);
 
-void v36FreeBitMap(struct BitMap *bmp, UWORD Width, UWORD Height, struct Library *GfxBase);
-struct BitMap* v36AllocBitMap(UWORD Width, UWORD Height, UBYTE Bitplanes, struct Library *GfxBase);
+void v36FreeBitMap(struct BitMap *bmp, UWORD Width, UWORD Height);
+struct BitMap* v36AllocBitMap(UWORD Width, UWORD Height, UBYTE Bitplanes);
 
 // X-Bitmap style images with some extension to support more than 2 colours
 
-// Pixel array for use with WritePixelArray8
-struct PixelImage{
-	UBYTE *pixelArray;			// Allocated automatically. Pixel array which can be used in WritePixelArray8
+struct ImageHeader
+{
 	LONG *pens;					// Allocated automatically. Array of pens either taken from XBM creation function or from XPM attributes.
 	UBYTE pencount;				// Writes the number of pens in pens array
 	UBYTE charspercolour; 		// XPM only - characters used to define colour
@@ -43,8 +42,33 @@ struct PixelImage{
 	ULONG *colourTable;			// XPM only - array of RRGGBBAA colours that correspond to the pens array and colourIDs list
 	UWORD width;				// Image width either from XBM parameter and header define or read from XPM attributes
 	UWORD height;				// Image height either from XBM parameter and header define or read from XPM attributes
+};
+
+// Pixel array for use with WritePixelArray8
+struct PixelImage{
+	struct ImageHeader hdr;
+	UBYTE *pixelArray;			// Allocated automatically. Pixel array which can be used in WritePixelArray8
 	UWORD stride;				// Pixel array stride (bytes per row - aligned to 16bits (WORD))
 };
+
+// Bitmaps for use with the blitter
+struct BitMapImage
+{
+	struct ImageHeader hdr;
+	struct BitMap *bmp;
+	//UWORD width;
+	//UWORD height;
+	PLANEPTR SimplePlane ; 		// Set if there's only 1 plane reused for multicolour effects
+	PLANEPTR MaskPlane;			// Set if there's only 1 plane reused for multicolour effects and a mask is used
+	BOOL hasMask;				// BitMap has an additional mask plane allocated
+};
+
+// Load an XBM into a 1 plane bitmap, with pen colour defined
+struct BitMapImage* xbmToBitMap(UBYTE *xbm, UBYTE pen, UWORD width, UWORD height);
+void freeXbmBitMap(struct BitMapImage *xbmBitMap);
+
+// Swap a planeptr to change colours
+void swapBitMapPlane(struct BitMap *bmp, UBYTE from, UBYTE to);
 
 // Load an XBM style image and set the 2 colours
 // A new PixelImage will be created, this must be freed with freePixelImage when finished using.

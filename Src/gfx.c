@@ -3,6 +3,9 @@
 #include <graphics/gfxmacros.h>
 #include <proto/graphics.h>
 #include <exec/memory.h>
+#include <string.h>
+
+extern struct GfxBase *GfxBase ;
 
 static void _freeBob(struct GfxGelSys *sys, struct GfxBobs *pBob)
 {
@@ -236,7 +239,7 @@ void cleanupGelSys(Wnd *pWnd)
 	}
 }
 
-void v36FreeBitMap(struct BitMap *bmp, UWORD Width, UWORD Height, struct Library *GfxBase)
+void v36FreeBitMap(struct BitMap *bmp, UWORD Width, UWORD Height)
 {
 	UWORD i=0;
 	
@@ -251,13 +254,27 @@ void v36FreeBitMap(struct BitMap *bmp, UWORD Width, UWORD Height, struct Library
 	FreeVec(bmp);
 }
 
-struct BitMap* v36AllocBitMap(UWORD Width, UWORD Height, UBYTE Bitplanes, struct Library *GfxBase)
+void swapBitMapPlane(struct BitMap *bmp, UBYTE from, UBYTE to)
+{
+	PLANEPTR tmp ;
+	if (bmp && from < 8 && to < 8){
+		if (from != to && from < (1 << bmp->Depth) && to < (1 << bmp->Depth)){
+			tmp = bmp->Planes[from];
+			bmp->Planes[from] = bmp->Planes[to];
+			bmp->Planes[to] = tmp;
+		}
+	}
+}
+
+struct BitMap* v36AllocBitMap(UWORD Width, UWORD Height, UBYTE Bitplanes)
 {
 	struct BitMap *bmp = NULL ;
-	UWORD i=0;
+	UWORD i=0, additionalBitplanes = 0;
 	
-	// May not need to worry about 8 byte alignment here. These are non-AGA systems below v39
-	bmp = AllocVec(sizeof(struct BitMap), MEMF_ANY | MEMF_CLEAR);
+	if (Bitplanes > 8){
+		additionalBitplanes = (sizeof(PLANEPTR) * (Bitplanes - 8));
+	}
+	bmp = AllocVec(sizeof(struct BitMap) + additionalBitplanes, MEMF_ANY | MEMF_CLEAR);
 	if (!bmp){
 		goto cleanup;
 	}
@@ -274,7 +291,7 @@ struct BitMap* v36AllocBitMap(UWORD Width, UWORD Height, UBYTE Bitplanes, struct
 	return bmp;
 cleanup:
 	if (bmp){
-		v36FreeBitMap(bmp, Width, Height, GfxBase);
+		v36FreeBitMap(bmp, Width, Height);
 	}
 	return NULL;
 }
@@ -294,19 +311,19 @@ struct PixelImage* xbmToPixelImage(UBYTE *xbm, UWORD width, UWORD height, UBYTE 
 	if (!(pixImg = AllocVec(sizeof(struct PixelImage), MEMF_ANY | MEMF_CLEAR))){
 		return NULL; // no memory
 	}
-	if (!(pixImg->pens = AllocVec(sizeof(LONG)*2, MEMF_ANY))){
+	if (!(pixImg->hdr.pens = AllocVec(sizeof(LONG)*2, MEMF_ANY))){
 		FreeVec(pixImg);
 		return NULL; // no memory
 	}
-	pixImg->pens[0] = colour0;
-	pixImg->pens[1] = colour1;
-	pixImg->pencount = 2;
-	pixImg->width = width;
-	pixImg->height = height;
+	pixImg->hdr.pens[0] = colour0;
+	pixImg->hdr.pens[1] = colour1;
+	pixImg->hdr.pencount = 2;
+	pixImg->hdr.width = width;
+	pixImg->hdr.height = height;
 	pixImg->stride = (((width+15)>>4)<<4); // Align to WORD
 	if (!(pixImg->pixelArray=AllocVec((pixImg->stride * height), MEMF_ANY | MEMF_CLEAR))){
 		// Failed to allocate memory
-		FreeVec(pixImg->pens);
+		FreeVec(pixImg->hdr.pens);
 		FreeVec(pixImg);
 		return NULL;
 	}
@@ -316,13 +333,108 @@ struct PixelImage* xbmToPixelImage(UBYTE *xbm, UWORD width, UWORD height, UBYTE 
 		
 		for (x=0;x<width;x++){ // iterate the new image column pixels
 			if (q[x>>3] & (1 << (x&0x07))){
-				*p++ = pixImg->pens[1];
+				*p++ = pixImg->hdr.pens[1];
 			}else{
-				*p++ = pixImg->pens[0];
+				*p++ = pixImg->hdr.pens[0];
 			}
 		}
 	}
 	return pixImg;
+}
+
+__INLINE__ static UBYTE reverseBits(UBYTE b)
+{
+	UBYTE rev =0, i=0;
+	for(;i < 8; i++){
+		if (b & (1 << i)){
+			rev |= (0x80 >> i);
+		}
+	}
+	return rev;
+}
+
+// Load an XBM style image into a BitMap
+// Free with freeXbmBitMap
+struct BitMapImage* xbmToBitMap(UBYTE *xbm, UBYTE pen, UWORD width, UWORD height)
+{
+	struct BitMapImage *bmpImg;
+	UBYTE *p = NULL, *q=NULL, *mask = NULL;
+	UWORD xbmstride = 0, row = 0, col = 0, depth = 1;
+
+	// depth now specifies the number of bits required to store colours - up to 8 bits (ignore more pens after this)
+	xbmstride = (width+7) / 8 ; // byte align XBM
+	
+	if (!(bmpImg=AllocVec(sizeof(struct BitMapImage), MEMF_ANY | MEMF_CLEAR))){
+		return NULL;
+	}
+	
+	if (pen > 0){
+		for (depth=0; ((0x80 & (pen<<depth)) == 0) && depth < 8;depth++);
+		depth = (8 - depth) ;
+	}
+	if (depth < 8){ // Cannot support a mask for 8 deep colour images (we didn't allocate the additional mask layer)
+		bmpImg->hasMask = TRUE ;
+	}
+	
+	if (!(bmpImg->bmp = v36AllocBitMap(width, height, bmpImg->hasMask?2:1))){
+		FreeVec(bmpImg);
+		return NULL;
+	}
+	bmpImg->bmp->Depth = depth; 
+	
+	bmpImg->hdr.width = width;
+	bmpImg->hdr.height = height;
+	
+	q = xbm;
+	for(row=0; row < height;row++){
+		if (bmpImg->hasMask){
+			mask = bmpImg->bmp->Planes[1] + (row *bmpImg->bmp->BytesPerRow);
+		}
+		p = bmpImg->bmp->Planes[0] + (row *bmpImg->bmp->BytesPerRow);
+		for(col=0;col < xbmstride;col++){
+			*p = reverseBits(*q++);
+			if (bmpImg->hasMask){
+				*mask++ = ~(*p++);
+			}
+		}
+	}
+	// Arrange into pseudo multidepth to set pen
+	// Remember plane 0 and mask plane 1
+	bmpImg->SimplePlane = bmpImg->bmp->Planes[0];
+	if (bmpImg->hasMask){
+		bmpImg->MaskPlane = bmpImg->bmp->Planes[1];
+	}
+	if (pen > 0){
+		for (depth=0; depth < bmpImg->bmp->Depth;depth++){
+			if (pen & (1 << depth)){
+				bmpImg->bmp->Planes[depth] = bmpImg->SimplePlane;
+			}else{
+				bmpImg->bmp->Planes[depth] = NULL ;
+			}
+		}
+	}
+	if (bmpImg->hasMask){
+		bmpImg->bmp->Planes[depth] = bmpImg->MaskPlane;
+	}
+	
+	return bmpImg;
+}
+
+void freeXbmBitMap(struct BitMapImage *xbmBitMap)
+{
+	if (xbmBitMap->SimplePlane){
+		xbmBitMap->bmp->Planes[0] = xbmBitMap->SimplePlane;
+		if (xbmBitMap->hasMask){
+			xbmBitMap->bmp->Planes[1] = xbmBitMap->MaskPlane;
+		}
+		xbmBitMap->bmp->Depth = 1;
+	}
+	if (xbmBitMap->hasMask){
+		xbmBitMap->bmp->Depth += 1;
+	}
+
+	v36FreeBitMap(xbmBitMap->bmp, xbmBitMap->hdr.width, xbmBitMap->hdr.height);
+	FreeVec(xbmBitMap);
 }
 
 static LONG ASCII_To_Long(char *szNum)
@@ -383,10 +495,10 @@ static BOOL _parseXPMAttribs(UBYTE **xpm, struct PixelImage *pi)
 				return FALSE;
 			}
 			switch(parsingparam++){
-				case 0:pi->width = (UWORD)tmp;break;
-				case 1:pi->height = (UWORD)tmp;break;
-				case 2:pi->pencount = (UBYTE)tmp;break;
-				case 3:pi->charspercolour = (UBYTE)tmp;break;
+				case 0:pi->hdr.width = (UWORD)tmp;break;
+				case 1:pi->hdr.height = (UWORD)tmp;break;
+				case 2:pi->hdr.pencount = (UBYTE)tmp;break;
+				case 3:pi->hdr.charspercolour = (UBYTE)tmp;break;
 				default:
 					break;
 			}
@@ -404,25 +516,25 @@ static BOOL _parseXPMColours(UBYTE **xpm, struct PixelImage *pi, struct ColorMap
 	UBYTE ci = 0, idi=0, idc=0, parsingparam = 0, hexcount = 0;
 	ULONG colour = 0;
 	BOOL ret = FALSE;
-	struct Library *GfxBase = NULL ;
+	//struct Library *GfxBase = NULL ;
 		
-	if (!(GfxBase = OpenLibrary("graphic.library", 0))){
-		return FALSE;
-	}
+	//if (!(GfxBase = OpenLibrary("graphic.library", 0))){
+	//	return FALSE;
+	//}
 	
-	if (pi->pencount == 0 || pi->charspercolour == 0 || pi->charspercolour > 5){
+	if (pi->hdr.pencount == 0 || pi->hdr.charspercolour == 0 || pi->hdr.charspercolour > 5){
 		return FALSE ; // nonsense parameters or cannot support
 	}
 	
-	//pi->colourIDs[pi->charspercolour] = '\0'; // add terminator at fixed length
+	//pi->colourIDs[pi->hdr.charspercolour] = '\0'; // add terminator at fixed length
 	
-	for (ci=0;ci < pi->pencount; ci++){
+	for (ci=0;ci < pi->hdr.pencount; ci++){
 		idi = 0;
 		idc = 0;
 		colour = 0;
 		hexcount = 0;
-		cid = pi->colourIDs+(ci*pi->charspercolour+1);
-		cid[pi->charspercolour] = '\0'; // Terminate ID
+		cid = pi->hdr.colourIDs+(ci*pi->hdr.charspercolour+1);
+		cid[pi->hdr.charspercolour] = '\0'; // Terminate ID
 		for (p = xpm[ci+1]; *p; p++){
 			switch(*p){
 				case ' ': case '\t': case '\n': case '\r': 
@@ -433,7 +545,7 @@ static BOOL _parseXPMColours(UBYTE **xpm, struct PixelImage *pi, struct ColorMap
 				default:
 					// Any non-ws chars
 					if (parsingparam == 0){ // Read the colour identifier
-						if (idi < pi->charspercolour){
+						if (idi < pi->hdr.charspercolour){
 							cid[idi++] = *p;
 						}
 					}else if(parsingparam == 1){ // Read the colour spec
@@ -462,16 +574,16 @@ static BOOL _parseXPMColours(UBYTE **xpm, struct PixelImage *pi, struct ColorMap
 			colour = colour << ((8-hexcount) * 4);
 		}
 		// Record the colour in the PixelImage
-		pi->colourTable[ci] = colour ;
+		pi->hdr.colourTable[ci] = colour ;
 		// Assign pen for colour
 		if (cm){
-			pi->pens[ci] = ObtainBestPen(cm, (colour << 0) | 0x00FFFFFF, (colour << 8) | 0x00FFFFFF, (colour << 16) | 0x00FFFFFF, OBP_Precision, PRECISION_EXACT, 0);
+			pi->hdr.pens[ci] = ObtainBestPen(cm, (colour << 0) | 0x00FFFFFF, (colour << 8) | 0x00FFFFFF, (colour << 16) | 0x00FFFFFF, OBP_Precision, PRECISION_EXACT, 0);
 		}
 	}
 	
 	ret = TRUE ;
 exit:
-	CloseLibrary(GfxBase);
+	//CloseLibrary(GfxBase);
 	return TRUE ;
 }
 
@@ -482,24 +594,24 @@ BOOL xpmUpdateColours(struct PixelImage *pi, UBYTE **xpm)
 	UBYTE *row = NULL, *p = NULL, *q = NULL, writePen = 0;
 	UWORD x=0, y=0, ci = 0, col = 0;
 	
-	for (y=0,row=pi->pixelArray; y < pi->height; y++, row+=pi->stride){
+	for (y=0,row=pi->pixelArray; y < pi->hdr.height; y++, row+=pi->stride){
 		p=row; // p points to start of new image row
-		q = xpm[pi->pencount+1+y]; // q points to start of xmb image row (these appear after params and all colour strings)
+		q = xpm[pi->hdr.pencount+1+y]; // q points to start of xmb image row (these appear after params and all colour strings)
 		
-		for (x=0;x<pi->width;x++){ // iterate the new image column pixels
+		for (x=0;x<pi->hdr.width;x++){ // iterate the new image column pixels
 			writePen = 0;
-			for(col=0; col < pi->pencount; col++){ // search for pen associated with colour id
-				for(ci = 0;ci < pi->charspercolour; ci++){
-					if (pi->colourIDs[((pi->charspercolour+1)*col)+ci] != q[ci]){
+			for(col=0; col < pi->hdr.pencount; col++){ // search for pen associated with colour id
+				for(ci = 0;ci < pi->hdr.charspercolour; ci++){
+					if (pi->hdr.colourIDs[((pi->hdr.charspercolour+1)*col)+ci] != q[ci]){
 						break;
 					}
 				}
-				if (ci == pi->pencount){ // found a pen
-					writePen = pi->pens[col];
+				if (ci == pi->hdr.pencount){ // found a pen
+					writePen = pi->hdr.pens[col];
 					break ; // done, exit search
 				}
 			}
-			q += pi->charspercolour; // jump to next colour ID
+			q += pi->hdr.charspercolour; // jump to next colour ID
 			*p++ = writePen ; // write pen ID into byte and move to next pixel in array
 		}
 	}
@@ -527,17 +639,17 @@ struct PixelImage* xpmToPixelImage(UBYTE **xpm, struct ColorMap *cm)
 	}
 	
 	// Allocate an array of pens which holds the Workbench allocated pen for each colour of the image. 
-	if (!(pixImg->pens = AllocVec(sizeof(LONG)*pixImg->pencount, MEMF_ANY))){
+	if (!(pixImg->hdr.pens = AllocVec(sizeof(LONG)*pixImg->hdr.pencount, MEMF_ANY))){
 		goto exit; // no memory
 	}
 	
 	// Allocate list of pen identifers from the XPM colour table. This is only useful for processing colour information 
 	// and allocating the initial pens. 
-	if (!(pixImg->colourIDs = AllocVec((pixImg->charspercolour+1)*pixImg->pencount, MEMF_ANY | MEMF_CLEAR))){
+	if (!(pixImg->hdr.colourIDs = AllocVec((pixImg->hdr.charspercolour+1)*pixImg->hdr.pencount, MEMF_ANY | MEMF_CLEAR))){
 		goto exit; // no memory
 	}
 	
-	if (!(pixImg->colourTable = AllocVec(sizeof(ULONG)*pixImg->pencount, MEMF_ANY | MEMF_CLEAR))){
+	if (!(pixImg->hdr.colourTable = AllocVec(sizeof(ULONG)*pixImg->hdr.pencount, MEMF_ANY | MEMF_CLEAR))){
 		goto exit; // no memory
 	}
 	
@@ -547,8 +659,8 @@ struct PixelImage* xpmToPixelImage(UBYTE **xpm, struct ColorMap *cm)
 	}
 	
 	// Allocate the pixel array
-	pixImg->stride = (((pixImg->width+15)>>4)<<4); // Align to WORD
-	if (!(pixImg->pixelArray=AllocVec((pixImg->stride * pixImg->height), MEMF_ANY | MEMF_CLEAR))){
+	pixImg->stride = (((pixImg->hdr.width+15)>>4)<<4); // Align to WORD
+	if (!(pixImg->pixelArray=AllocVec((pixImg->stride * pixImg->hdr.height), MEMF_ANY | MEMF_CLEAR))){
 		// Failed to allocate memory
 		goto exit;
 	}
@@ -574,17 +686,17 @@ void freePixelImage(struct PixelImage *pi)
 			FreeVec(pi->pixelArray);
 			pi->pixelArray = NULL;
 		}
-		if (pi->pens){
-			FreeVec(pi->pens);
-			pi->pens = NULL;
+		if (pi->hdr.pens){
+			FreeVec(pi->hdr.pens);
+			pi->hdr.pens = NULL;
 		}
-		if (pi->colourIDs){
-			FreeVec(pi->colourIDs);
-			pi->colourIDs = NULL;
+		if (pi->hdr.colourIDs){
+			FreeVec(pi->hdr.colourIDs);
+			pi->hdr.colourIDs = NULL;
 		}
-		if (pi->colourTable){
-			FreeVec(pi->colourTable);
-			pi->colourTable = NULL;
+		if (pi->hdr.colourTable){
+			FreeVec(pi->hdr.colourTable);
+			pi->hdr.colourTable = NULL;
 		}
 		FreeVec(pi);
 	}

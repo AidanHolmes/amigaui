@@ -12,7 +12,8 @@
 #include <cybergraphx/cybergraphics.h>
 #include <proto/cybergraphics.h>
 
-#define GfxBase ctx->gfxlib
+//#define GfxBase ctx->gfxlib
+extern struct GfxBase *GfxBase;
 
 static UWORD _parseIFFImage_callback(struct IFFstack *stack, struct IFFctx *ctx, ULONG offset) ;
 
@@ -727,12 +728,12 @@ final:
 
 static void _v36FreeBitMap(struct IFFctx *ctx, struct BitMap *bmp, struct _BitmapHeader *bitmaphdr)
 {
-	v36FreeBitMap(bmp, bitmaphdr->Width, bitmaphdr->Height, ctx->gfxlib);
+	v36FreeBitMap(bmp, bitmaphdr->Width, bitmaphdr->Height);
 }
 
 static struct BitMap* _v36AllocBitMap(struct IFFctx *ctx, struct _BitmapHeader *bitmaphdr)
 {
-	return v36AllocBitMap(bitmaphdr->Width, bitmaphdr->Height, bitmaphdr->Bitplanes+(bitmaphdr->Masking?1:0), ctx->gfxlib);
+	return v36AllocBitMap(bitmaphdr->Width, bitmaphdr->Height, bitmaphdr->Bitplanes+(bitmaphdr->Masking?1:0));
 }
 
 struct BitMap* createBitMap(struct IFFctx *ctx, struct IFFChunkData *body, struct _BitmapHeader *bitmaphdr, struct BitMap *friend)

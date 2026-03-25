@@ -16,10 +16,10 @@ INCDEPENDS=IncludeDirectory=//CGraphX/C/Include/ IncludeDirectory=//NDK3.2R4/Inc
 #optdepth
 # defines the maximum depth of function calls to be Mined. The
 # range is 0 to 6, and the default value is 3.
-PRODCOPTS = nocheckabort OPTIMIZE Optimizerinline OptimizerComplexity=30 OptimizerGlobal OptimizerDepth=6 OptimizerLoop OptimizerTime OptimizerSchedule OptimizerPeephole IGNORE=193 $(INCDEPENDS)
+PRODCOPTS = nocheckabort OPTIMIZE Optimizerinline OptimizerComplexity=30 OptimizerGlobal OptimizerDepth=6 OptimizerLoop OptimizerTime OptimizerSchedule OptimizerPeephole $(INCDEPENDS)
 
 # debug version build options
-DBGCOPTS = nocheckabort DEFINE=_DEBUG IGNORE=193 debug=full $(INCDEPENDS)
+DBGCOPTS = nocheckabort DEFINE=_DEBUG debug=full $(INCDEPENDS)
 
 all: $(RELEASE) $(DEBUG)
 	execute <<
